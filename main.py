@@ -53,15 +53,12 @@ async def what_is_it(message: Message):
 
 @dp.message(F.text == "Як це працює?")
 async def how_it_works(message: Message):
-    await message.answer(
-        "1⃣️ Обираєш кількість локацій
-"
-        "2⃣️ Отримуєш маршрут
-"
-        "3⃣️ Йдеш гуляти, досліджуєш, фотографуєш
-"
-        "4⃣️ Можеш поділитися враженнями тут ✍️"
-    )
+   await message.answer(
+    "1⃣️ Обираєш кількість локацій\n"
+    "2⃣️ Отримуєш маршрут\n"
+    "3⃣️ Йдеш гуляти, досліджуєш, фотографуєш\n"
+    "4⃣️ Можеш поділитися враженнями тут ✍️"
+)
 
 @dp.message(F.text == "Варіанти маршрутів")
 async def routes_options(message: Message):
