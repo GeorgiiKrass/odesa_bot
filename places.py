@@ -28,6 +28,9 @@ def get_random_places(n=3):
             }
         )
         data = response.json()
+
+        print(f"👉 type: {place_type}, status: {data.get('status')}, results: {len(data.get('results', []))}")
+
         candidates = data.get("results", [])
         random.shuffle(candidates)
 
