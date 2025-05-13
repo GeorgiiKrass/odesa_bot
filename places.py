@@ -52,4 +52,8 @@ def get_random_places(n=3):
 
         attempts += 1
 
+    print(f"🔍 Зібрано унікальних локацій: {len(all_places)}")
+    for p in all_places:
+        print(p["name"], p["lat"], p["lon"])
+
     return all_places[:n]
