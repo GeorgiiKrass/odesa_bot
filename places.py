@@ -18,16 +18,21 @@ RADIUS = 3000  # в метрах
 def get_random_places(n=3):
     all_places = []
     used_ids = set()
-
-    # Перемешиваем типы и проходим по каждому — для разнообразия
     place_types = ALLOWED_TYPES.copy()
     random.shuffle(place_types)
+    type_index = 0
+    attempts = 0
 
-    for place_type in place_types:
-        if len(all_places) >= n:
-            break
+    print(f"[DEBUG] Used API key: {GOOGLE_API_KEY}")
 
-        print(f"[DEBUG] Used API key: {GOOGLE_API_KEY}")
+    while len(all_places) < n and attempts < 50:
+        if type_index >= len(place_types):
+            random.shuffle(place_types)
+            type_index = 0
+
+        place_type = place_types[type_index]
+        type_index += 1
+
         response = requests.get(
             "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
             params={
@@ -38,6 +43,7 @@ def get_random_places(n=3):
             }
         )
         data = response.json()
+
         print(f"👉 type: {place_type}, status: {data.get('status')}, results: {len(data.get('results', []))}")
 
         candidates = data.get("results", [])
@@ -59,5 +65,11 @@ def get_random_places(n=3):
             if len(all_places) >= n:
                 break
 
+        attempts += 1
+
     print(f"🔍 Зібрано унікальних локацій: {len(all_places)}")
+    for p in all_places:
+        print(p["name"], p["lat"], p["lon"])
+
     return all_places[:n]
+
