@@ -4,7 +4,11 @@ import os
 
 ALLOWED_TYPES = [
     "art_gallery", "museum", "park", "zoo", "church", "synagogue", "library",
-    "movie_theater", "restaurant", "cafe", "tourist_attraction"
+    "movie_theater", "restaurant", "cafe", "tourist_attraction", "amusement_park",
+    "aquarium", "book_store", "bowling_alley", "cemetery", "hindu_temple",
+    "mosque", "night_club", "shopping_mall", "stadium", "university",
+    "city_hall", "train_station", "subway_station", "fountain", "plaza",
+    "sculpture", "historical_landmark", "campground"
 ]
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -18,16 +22,13 @@ def get_random_places(n=3):
     all_places = []
     used_ids = set()
     used_types = set()
-    attempts = 0
+    random.shuffle(ALLOWED_TYPES)
 
-    while len(all_places) < n and attempts < 30:
-        remaining_types = list(set(ALLOWED_TYPES) - used_types)
-        if not remaining_types:
-            remaining_types = ALLOWED_TYPES
-            used_types.clear()
-
-        place_type = random.choice(remaining_types)
-        used_types.add(place_type)
+    for place_type in ALLOWED_TYPES:
+        if len(all_places) >= n:
+            break
+        if place_type in used_types:
+            continue
 
         response = requests.get(
             "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
@@ -39,6 +40,9 @@ def get_random_places(n=3):
             }
         )
         data = response.json()
+
+        print(f"👉 type: {place_type}, status: {data.get('status')}, results: {len(data.get('results', []))}")
+
         candidates = data.get("results", [])
         random.shuffle(candidates)
 
@@ -47,19 +51,18 @@ def get_random_places(n=3):
             if place_id in used_ids:
                 continue
 
-            name = place.get("name")
+            name = place["name"]
             lat = place["geometry"]["location"]["lat"]
             lon = place["geometry"]["location"]["lng"]
             url = f"https://maps.google.com/?q={lat},{lon}"
             rating = place.get("rating")
             address = place.get("vicinity", "Адреса не вказана")
-            reviews = place.get("user_ratings_total", 0)
 
             photo_url = None
             if "photos" in place:
-                ref = place["photos"][0].get("photo_reference")
-                if ref:
-                    photo_url = get_photo_url(ref)
+                photo_ref = place["photos"][0].get("photo_reference")
+                if photo_ref:
+                    photo_url = get_photo_url(photo_ref)
 
             all_places.append({
                 "name": name,
@@ -67,15 +70,12 @@ def get_random_places(n=3):
                 "lon": lon,
                 "url": url,
                 "rating": rating,
-                "reviews": reviews,
                 "address": address,
                 "photo": photo_url
             })
             used_ids.add(place_id)
+            used_types.add(place_type)
+            break  # беремо тільки одну локацію з кожного типу
 
-            if len(all_places) >= n:
-                break
-
-        attempts += 1
-
+    print(f"🔍 Зібрано унікальних локацій: {len(all_places)}")
     return all_places[:n]
