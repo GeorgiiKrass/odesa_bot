@@ -17,8 +17,10 @@ RADIUS = 3000
 def get_random_places(n=3):
     all_places = []
     used_ids = set()
+    attempts = 0
 
-    for place_type in ALLOWED_TYPES:
+    while len(all_places) < n and attempts < 20:
+        place_type = random.choice(ALLOWED_TYPES)
         response = requests.get(
             "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
             params={
@@ -30,6 +32,7 @@ def get_random_places(n=3):
         )
         data = response.json()
         candidates = data.get("results", [])
+        random.shuffle(candidates)
 
         for place in candidates:
             place_id = place["place_id"]
@@ -44,7 +47,9 @@ def get_random_places(n=3):
             all_places.append({"name": name, "lat": lat, "lon": lon, "url": url})
             used_ids.add(place_id)
 
-    if len(all_places) < n:
-        return []
+            if len(all_places) >= n:
+                break
 
-    return random.sample(all_places, n)
+        attempts += 1
+
+    return all_places[:n]
