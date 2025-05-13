@@ -69,14 +69,14 @@ def get_random_places(n=3):
                     photo_url = get_photo_url(photo_ref)
 
             all_places.append({
-                "name": name,
-                "lat": lat,
-                "lon": lon,
-                "url": url,
-                "rating": rating,
-                "address": address,
-                "photo_url": photo_url
-            })
+    "name": name,
+    "lat": lat,
+    "lon": lon,
+    "url": url,
+    "rating": rating,
+    "address": address,
+    "photo": photo_url  # ← ось тут!
+})
             used_ids.add(place_id)
 
             if len(all_places) >= n:
