@@ -7,7 +7,10 @@ from dotenv import load_dotenv
 import asyncio
 import os
 
-BOT_TOKEN = os.environ["BOT_TOKEN"]
+from dotenv import load_dotenv
+load_dotenv()
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
