@@ -58,10 +58,10 @@ async def what_is_it(message: Message):
 @dp.message(F.text == "Як це працює?")
 async def how_it_works(message: Message):
     await message.answer(
-        "1️⃣ Обираєш кількість локацій\n"
-        "2️⃣ Отримуєш маршрут\n"
-        "3️⃣ Йдеш гуляти, досліджуєш, фотографуєш\n"
-        "4️⃣ Можеш поділитися враженнями тут ✍️"
+        "1⃣️ Обираєш кількість локацій\n"
+        "2⃣️ Отримуєш маршрут\n"
+        "3⃣️ Йдеш гуляти, досліджуєш, фотографуєш\n"
+        "4⃣️ Можеш поділитися враженнями тут ✍️"
     )
 
 @dp.message(F.text == "Варіанти маршрутів")
@@ -133,7 +133,7 @@ async def send_fake_paid_route(message: Message, count: int):
     places = get_random_places(count)
 
     if not places:
-        await message.reply("Не вдалося знайти локації 😢 Спробуй ще раз.")
+        await message.reply("Не вдалося знайти локації 😞 Спробуй ще раз.")
         return
 
     text = "🔹 Твоя пригода на сьогодні:\n\n"
@@ -145,7 +145,7 @@ async def send_fake_paid_route(message: Message, count: int):
 @dp.message(F.text.startswith("/getroute"))
 async def send_route(message: Message):
     if not is_authorized(message.from_user.id):
-        await message.reply("Цей бот ще не доступний публічно 🙃")
+        await message.reply("Цей бот ще не доступний публічно 🤓")
         return
 
     try:
@@ -160,7 +160,7 @@ async def send_route(message: Message):
     places = get_random_places(count)
 
     if not places:
-        await message.reply("Не вдалося знайти локації 😢 Спробуй ще раз.")
+        await message.reply("Не вдалося знайти локації 😞 Спробуй ще раз.")
         return
 
     text = "🔹 Твоя пригода на сьогодні:\n\n"
