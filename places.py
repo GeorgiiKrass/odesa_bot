@@ -18,8 +18,8 @@ def get_random_places(n=3):
 
     while len(all_places) < n and attempts < 20:
         place_type = random.choice(ALLOWED_TYPES)
+        print(f"[DEBUG] Used API key: {os.getenv('GOOGLE_API_KEY')}")
         response = requests.get(
-            print(f"[DEBUG] Used API key: {os.getenv('GOOGLE_API_KEY')}")
             "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
             params={
                 "location": f"{CENTER_LAT},{CENTER_LON}",
