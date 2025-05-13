@@ -1,3 +1,4 @@
+from map_image import generate_static_map
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Message, FSInputFile
 from aiogram.enums import ParseMode
@@ -19,6 +20,7 @@ dp = Dispatcher()
 @dp.message(F.text == "/start")
 async def start_handler(message: Message):
     kb = ReplyKeyboardBuilder()
+    kb.button(text="🎯 Тестова карта")
     kb.button(text="Що це таке?")
     kb.button(text="Як це працює?")
     kb.button(text="Замовити екскурсію")
@@ -145,6 +147,21 @@ async def go_back(message: Message):
         "⬅ Повернув тебе в головне меню. Обери, з чого хочеш почати 👇",
         reply_markup=kb.as_markup(resize_keyboard=True)
     )
+@dp.message(F.text == "🎯 Тестова карта")
+async def test_map(message: Message):
+    # Координати 3 точок у центрі Одеси (наприклад)
+    locations = [
+        (46.4846, 30.7326),  # Дерибасівська
+        (46.4775, 30.7321),  # Потьомкінські сходи
+        (46.4818, 30.7473)   # Оперний театр
+    ]
+
+    map_path = generate_static_map(locations)
+    if map_path:
+        photo = FSInputFile(map_path)
+        await message.answer_photo(photo, caption="Ось приклад маршруту з трьома локаціями 📍")
+    else:
+        await message.answer("Не вдалося завантажити карту.")
 
 async def main():
     await dp.start_polling(bot)
