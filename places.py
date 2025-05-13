@@ -12,22 +12,17 @@ ALLOWED_TYPES = [
 ]
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-CENTER_LAT, CENTER_LON = 46.4825, 30.7233
+CENTER_LAT, CENTER_LON = 46.4825, 30.7233  # Центр Одеси
 RADIUS = 3000
 
 def get_random_places(n=3):
     all_places = []
     used_ids = set()
-    used_types = set()
     attempts = 0
 
-    while len(all_places) < n and attempts < 50:
-        available_types = list(set(ALLOWED_TYPES) - used_types)
-        if not available_types:
-            available_types = ALLOWED_TYPES
-        place_type = random.choice(available_types)
-        used_types.add(place_type)
-
+    while len(all_places) < n and attempts < 20:
+        place_type = random.choice(ALLOWED_TYPES)
+        print(f"[DEBUG] Used API key: {os.getenv('GOOGLE_API_KEY')}")
         response = requests.get(
             "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
             params={
@@ -38,6 +33,8 @@ def get_random_places(n=3):
             }
         )
         data = response.json()
+
+        print(f"👉 type: {place_type}, status: {data.get('status')}, results: {len(data.get('results', []))}")
 
         candidates = data.get("results", [])
         random.shuffle(candidates)
@@ -51,25 +48,25 @@ def get_random_places(n=3):
             lat = place["geometry"]["location"]["lat"]
             lon = place["geometry"]["location"]["lng"]
             url = f"https://maps.google.com/?q={lat},{lon}"
+            rating = place.get("rating", "немає")
+            vicinity = place.get("vicinity", "")
 
             photo_url = None
-            if "photos" in place:
-                photo_ref = place["photos"][0]["photo_reference"]
-                photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference={photo_ref}&key={GOOGLE_API_KEY}"
-
-            address = place.get("vicinity", "Адреса не вказана")
-            rating = place.get("rating")
-            user_ratings_total = place.get("user_ratings_total")
+            if "photos" in place and place["photos"]:
+                photo_reference = place["photos"][0]["photo_reference"]
+                photo_url = (
+                    f"https://maps.googleapis.com/maps/api/place/photo"
+                    f"?maxwidth=800&photoreference={photo_reference}&key={GOOGLE_API_KEY}"
+                )
 
             all_places.append({
                 "name": name,
                 "lat": lat,
                 "lon": lon,
                 "url": url,
-                "photo_url": photo_url,
-                "address": address,
                 "rating": rating,
-                "user_ratings_total": user_ratings_total
+                "vicinity": vicinity,
+                "photo_url": photo_url
             })
             used_ids.add(place_id)
 
@@ -77,5 +74,9 @@ def get_random_places(n=3):
                 break
 
         attempts += 1
+
+    print(f"🔍 Зібрано унікальних локацій: {len(all_places)}")
+    for p in all_places:
+        print(p["name"], p["lat"], p["lon"])
 
     return all_places[:n]
