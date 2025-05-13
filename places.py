@@ -12,26 +12,21 @@ ALLOWED_TYPES = [
 ]
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-CENTER_LAT, CENTER_LON = 46.4825, 30.7233  # Центр Одеси
-RADIUS = 3000  # в метрах
+CENTER_LAT, CENTER_LON = 46.4825, 30.7233
+RADIUS = 3000
 
 def get_random_places(n=3):
     all_places = []
     used_ids = set()
-    available_types = ALLOWED_TYPES.copy()
-    random.shuffle(available_types)
-    type_index = 0
+    used_types = set()
     attempts = 0
 
-    print(f"[DEBUG] Used API key: {GOOGLE_API_KEY}")
-
     while len(all_places) < n and attempts < 50:
-        if type_index >= len(available_types):
-            random.shuffle(available_types)
-            type_index = 0
-
-        place_type = available_types[type_index]
-        type_index += 1
+        available_types = list(set(ALLOWED_TYPES) - used_types)
+        if not available_types:
+            available_types = ALLOWED_TYPES
+        place_type = random.choice(available_types)
+        used_types.add(place_type)
 
         response = requests.get(
             "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
@@ -44,15 +39,9 @@ def get_random_places(n=3):
         )
         data = response.json()
 
-        print(f"👉 type: {place_type}, status: {data.get('status')}, results: {len(data.get('results', []))}")
-
-        if data.get("status") != "OK":
-            continue
-
         candidates = data.get("results", [])
         random.shuffle(candidates)
 
-        found = False
         for place in candidates:
             place_id = place["place_id"]
             if place_id in used_ids:
@@ -63,20 +52,30 @@ def get_random_places(n=3):
             lon = place["geometry"]["location"]["lng"]
             url = f"https://maps.google.com/?q={lat},{lon}"
 
+            photo_url = None
+            if "photos" in place:
+                photo_ref = place["photos"][0]["photo_reference"]
+                photo_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference={photo_ref}&key={GOOGLE_API_KEY}"
+
+            address = place.get("vicinity", "Адреса не вказана")
+            rating = place.get("rating")
+            user_ratings_total = place.get("user_ratings_total")
+
             all_places.append({
-                "name": name, "lat": lat, "lon": lon, "url": url, "type": place_type
+                "name": name,
+                "lat": lat,
+                "lon": lon,
+                "url": url,
+                "photo_url": photo_url,
+                "address": address,
+                "rating": rating,
+                "user_ratings_total": user_ratings_total
             })
             used_ids.add(place_id)
-            found = True
-            break
 
-        if not found:
-            continue
+            if len(all_places) >= n:
+                break
 
         attempts += 1
-
-    print(f"🔍 Зібрано унікальних локацій: {len(all_places)}")
-    for p in all_places:
-        print(f"{p['name']} ({p['type']}) – {p['lat']}, {p['lon']}")
 
     return all_places[:n]
