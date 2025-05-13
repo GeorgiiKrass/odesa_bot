@@ -18,19 +18,19 @@ RADIUS = 3000  # в метрах
 def get_random_places(n=3):
     all_places = []
     used_ids = set()
-    place_types = ALLOWED_TYPES.copy()
-    random.shuffle(place_types)
+    available_types = ALLOWED_TYPES.copy()
+    random.shuffle(available_types)
     type_index = 0
     attempts = 0
 
     print(f"[DEBUG] Used API key: {GOOGLE_API_KEY}")
 
     while len(all_places) < n and attempts < 50:
-        if type_index >= len(place_types):
-            random.shuffle(place_types)
+        if type_index >= len(available_types):
+            random.shuffle(available_types)
             type_index = 0
 
-        place_type = place_types[type_index]
+        place_type = available_types[type_index]
         type_index += 1
 
         response = requests.get(
@@ -46,9 +46,13 @@ def get_random_places(n=3):
 
         print(f"👉 type: {place_type}, status: {data.get('status')}, results: {len(data.get('results', []))}")
 
+        if data.get("status") != "OK":
+            continue
+
         candidates = data.get("results", [])
         random.shuffle(candidates)
 
+        found = False
         for place in candidates:
             place_id = place["place_id"]
             if place_id in used_ids:
@@ -59,17 +63,20 @@ def get_random_places(n=3):
             lon = place["geometry"]["location"]["lng"]
             url = f"https://maps.google.com/?q={lat},{lon}"
 
-            all_places.append({"name": name, "lat": lat, "lon": lon, "url": url})
+            all_places.append({
+                "name": name, "lat": lat, "lon": lon, "url": url, "type": place_type
+            })
             used_ids.add(place_id)
+            found = True
+            break
 
-            if len(all_places) >= n:
-                break
+        if not found:
+            continue
 
         attempts += 1
 
     print(f"🔍 Зібрано унікальних локацій: {len(all_places)}")
     for p in all_places:
-        print(p["name"], p["lat"], p["lon"])
+        print(f"{p['name']} ({p['type']}) – {p['lat']}, {p['lon']}")
 
     return all_places[:n]
-
