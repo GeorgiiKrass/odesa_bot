@@ -1,4 +1,3 @@
-from map_image import generate_static_map
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ParseMode
@@ -13,16 +12,13 @@ from places import get_random_places
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
-
-MY_ID = 909231739  # ЗАМЕНИ на свой Telegram user_id
+MY_ID = 909231739  # Замени на свой Telegram user_id
 
 def is_authorized(user_id):
     return user_id == MY_ID
 
-# Стартове повідомлення з фото
 @dp.message(F.text == "/start")
 async def start_handler(message: Message):
     kb = ReplyKeyboardBuilder()
@@ -32,7 +28,6 @@ async def start_handler(message: Message):
     kb.button(text="Варіанти маршрутів")
     kb.button(text="Відгуки")
     kb.adjust(2)
-
     photo = FSInputFile("odesa_logo.jpg")
     await message.answer_photo(
         photo=photo,
@@ -46,43 +41,6 @@ async def start_handler(message: Message):
         reply_markup=kb.as_markup(resize_keyboard=True)
     )
 
-# Інформаційні кнопки
-@dp.message(F.text == "Що це таке?")
-async def what_is_it(message: Message):
-    await message.answer(
-        "“Одесса навмання” — це Telegram-бот, який обирає маршрут по Одесі замість тебе. "
-        "Ти натискаєш кнопку — і отримуєш маршрут з 3, 5 або 10 локацій.\n\n"
-        "Все, що треба — просто вирушити!"
-    )
-
-@dp.message(F.text == "Як це працює?")
-async def how_it_works(message: Message):
-    await message.answer(
-        "1⃣️ Обираєш кількість локацій\n"
-        "2⃣️ Отримуєш маршрут\n"
-        "3⃣️ Йдеш гуляти, досліджуєш, фотографуєш\n"
-        "4⃣️ Можеш поділитися враженнями тут ✍️"
-    )
-
-@dp.message(F.text == "Варіанти маршрутів")
-async def routes_options(message: Message):
-    await message.answer(
-        "Можна обрати маршрут на:\n\n"
-        "🔸 3 локації — коротка прогулянка\n"
-        "🔸 5 локацій — ідеально на пів дня\n"
-        "🔸 10 локацій — справжня пригода!"
-    )
-
-@dp.message(F.text == "Відгуки")
-async def reviews(message: Message):
-    await message.answer(
-        "🔹 «Думав, що знаю Одесу — але цей бот показав іншу!»\n"
-        "🔹 «Пройшли маршрут з друзями — було цікаво і незвично!»\n"
-        "🔹 «Кайф! Дуже атмосферно. Ще б на райончики 😏»\n\n"
-        "Хочеш залишити свій відгук? Напиши його у відповідь на це повідомлення ✍️"
-    )
-
-# Кнопка "Вирушити на прогулянку"
 @dp.message(F.text == "Вирушити на прогулянку")
 async def self_guided(message: Message):
     kb = ReplyKeyboardBuilder()
@@ -91,7 +49,6 @@ async def self_guided(message: Message):
     kb.button(text="Маршрут з 10 локацій (79 грн)")
     kb.button(text="⬅ Назад")
     kb.adjust(1)
-
     await message.answer(
         "<b>Варіанти самостійних маршрутів:</b>\n\n"
         "📍 <b>Маршрут з 3 локації</b> — 29 грн\n"
@@ -103,18 +60,7 @@ async def self_guided(message: Message):
 
 @dp.message(F.text == "⬅ Назад")
 async def go_back(message: Message):
-    kb = ReplyKeyboardBuilder()
-    kb.button(text="Що це таке?")
-    kb.button(text="Як це працює?")
-    kb.button(text="Вирушити на прогулянку")
-    kb.button(text="Варіанти маршрутів")
-    kb.button(text="Відгуки")
-    kb.adjust(2)
-
-    await message.answer(
-        "⬅ Повернув тебе в головне меню. Обери, з чого хочеш почати 👇",
-        reply_markup=kb.as_markup(resize_keyboard=True)
-    )
+    await start_handler(message)
 
 @dp.message(F.text == "Маршрут з 3 локації (29 грн)")
 async def route_3(message: Message):
@@ -127,6 +73,20 @@ async def route_5(message: Message):
 @dp.message(F.text == "Маршрут з 10 локацій (79 грн)")
 async def route_10(message: Message):
     await send_fake_paid_route(message, 10)
+
+@dp.message(F.text.startswith("/getroute"))
+async def send_route(message: Message):
+    if not is_authorized(message.from_user.id):
+        await message.reply("Цей бот ще не доступний публічно 🤓")
+        return
+    try:
+        count = int(message.text.split(" ")[1])
+        if count not in [3, 5, 10]:
+            raise ValueError
+    except:
+        await message.reply("Використання: /getroute 3 або /getroute 5 або /getroute 10")
+        return
+    await send_fake_paid_route(message, count)
 
 async def send_fake_paid_route(message: Message, count: int):
     await message.answer("🔄 Шукаю цікаві місця на мапі…")
@@ -143,29 +103,14 @@ async def send_fake_paid_route(message: Message, count: int):
 
         caption = f"<b>{i}. {place['name']}</b>\n"
         if place.get("rating"):
-            caption += f"⭐ {place['rating']} ({place['reviews']} відгуків)\n"
+            caption += f"⭐ {place['rating']}\n"
+        if place.get("address"):
+            caption += f"{place['address']}\n"
 
-        if place.get("photo"):
-            print(f"📷 Фото: {place['photo']}")
-            await message.answer_photo(photo=place["photo"], caption=caption, reply_markup=btn)
+        if place.get("photo_url"):
+            await message.answer_photo(photo=place["photo_url"], caption=caption, reply_markup=btn)
         else:
             await message.answer(caption, reply_markup=btn)
-
-@dp.message(F.text.startswith("/getroute"))
-async def send_route(message: Message):
-    if not is_authorized(message.from_user.id):
-        await message.reply("Цей бот ще не доступний публічно 🤓")
-        return
-
-    try:
-        count = int(message.text.split(" ")[1])
-        if count not in [3, 5, 10]:
-            raise ValueError
-    except:
-        await message.reply("Використання: /getroute 3 або /getroute 5 або /getroute 10")
-        return
-
-    await send_fake_paid_route(message, count)
 
 async def main():
     await dp.start_polling(bot)
