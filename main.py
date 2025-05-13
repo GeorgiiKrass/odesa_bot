@@ -1,6 +1,6 @@
 from map_image import generate_static_map
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import Message, FSInputFile
+from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ParseMode
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from aiogram.client.default import DefaultBotProperties
@@ -136,11 +136,19 @@ async def send_fake_paid_route(message: Message, count: int):
         await message.reply("Не вдалося знайти локації 😞 Спробуй ще раз.")
         return
 
-    text = "🔹 Твоя пригода на сьогодні:\n\n"
     for i, place in enumerate(places, 1):
-        text += f"{i}. {place['name']}\n👉 <a href='{place['url']}'>Google Maps</a>\n\n"
+        btn = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗺 Відкрити на мапі", url=place["url"])]
+        ])
 
-    await message.reply(text)
+        caption = f"<b>{i}. {place['name']}</b>\n"
+        if "rating" in place:
+            caption += f"⭐ {place['rating']} ({place['reviews']} відгуків)\n"
+
+        if place.get("photo"):
+            await message.answer_photo(photo=place["photo"], caption=caption, reply_markup=btn)
+        else:
+            await message.answer(caption, reply_markup=btn)
 
 @dp.message(F.text.startswith("/getroute"))
 async def send_route(message: Message):
@@ -156,22 +164,10 @@ async def send_route(message: Message):
         await message.reply("Використання: /getroute 3 або /getroute 5 або /getroute 10")
         return
 
-    await message.reply("🔄 Шукаю цікаві місця на мапі…")
-    places = get_random_places(count)
-
-    if not places:
-        await message.reply("Не вдалося знайти локації 😞 Спробуй ще раз.")
-        return
-
-    text = "🔹 Твоя пригода на сьогодні:\n\n"
-    for i, place in enumerate(places, 1):
-        text += f"{i}. {place['name']}\n👉 <a href='{place['url']}'>Google Maps</a>\n\n"
-
-    await message.reply(text)
+    await send_fake_paid_route(message, count)
 
 async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
-
