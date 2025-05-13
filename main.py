@@ -142,10 +142,11 @@ async def send_fake_paid_route(message: Message, count: int):
         ])
 
         caption = f"<b>{i}. {place['name']}</b>\n"
-        if "rating" in place:
+        if place.get("rating"):
             caption += f"⭐ {place['rating']} ({place['reviews']} відгуків)\n"
 
         if place.get("photo"):
+            print(f"📷 Фото: {place['photo']}")
             await message.answer_photo(photo=place["photo"], caption=caption, reply_markup=btn)
         else:
             await message.answer(caption, reply_markup=btn)
