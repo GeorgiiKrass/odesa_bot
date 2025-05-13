@@ -3,11 +3,8 @@ import requests
 import os
 
 ALLOWED_TYPES = [
-    "art_gallery", "museum", "park", "zoo", "water_park", "church", "synagogue",
-    "library", "movie_theater", "opera_house", "concert_hall", "historical_landmark",
-    "tourist_attraction", "plaza", "cultural_center", "event_venue", "botanical_garden",
-    "stadium", "university", "market", "cafe", "restaurant", "coffee_shop", "bakery",
-    "meal_takeaway", "amusement_park", "amphitheatre"
+    "art_gallery", "museum", "park", "zoo", "church", "synagogue",
+    "library", "movie_theater", "restaurant", "cafe", "tourist_attraction"
 ]
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
