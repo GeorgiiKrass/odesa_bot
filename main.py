@@ -6,6 +6,7 @@ from aiogram.client.default import DefaultBotProperties
 from dotenv import load_dotenv
 import asyncio
 import os
+import aiohttp
 
 from places import get_random_places, get_directions_image_url
 
@@ -20,6 +21,7 @@ MY_ID = 909231739
 def is_authorized(user_id):
     return user_id == MY_ID
 
+# Головне меню
 @dp.message(F.text == "/start")
 async def start_handler(message: Message):
     kb = ReplyKeyboardBuilder()
@@ -29,6 +31,7 @@ async def start_handler(message: Message):
     kb.button(text="Варіанти маршрутів")
     kb.button(text="Відгуки")
     kb.adjust(2)
+
     photo = FSInputFile("odesa_logo.jpg")
     await message.answer_photo(
         photo=photo,
@@ -77,6 +80,7 @@ async def reviews(message: Message):
         "Хочеш залишити свій відгук? Напиши його у відповідь на це повідомлення ✍️"
     )
 
+# Прогулянка
 @dp.message(F.text == "Вирушити на прогулянку")
 async def self_guided(message: Message):
     kb = ReplyKeyboardBuilder()
@@ -85,12 +89,13 @@ async def self_guided(message: Message):
     kb.button(text="Маршрут з 10 локацій")
     kb.button(text="⬅ Назад")
     kb.adjust(1)
+
     await message.answer(
         "<b>Варіанти самостійних маршрутів:</b>\n\n"
         "📍 <b>Маршрут з 3 локації</b>\n"
         "📍 <b>Маршрут з 5 локацій</b>\n"
         "📍 <b>Маршрут з 10 локацій</b>\n\n"
-        "Після натискання ти отримаєш локації та карту з маршрутом.",
+        "Обери бажаний маршрут 👇",
         reply_markup=kb.as_markup(resize_keyboard=True)
     )
 
@@ -118,7 +123,7 @@ async def send_route(message: Message, count: int):
     for i, place in enumerate(places, 1):
         caption = f"<b>{i}. {place['name']}</b>\n"
         if place.get("rating"):
-            caption += f"⭐ {place['rating']} ({place.get('reviews', 0)} відгуків)\n"
+            caption += f"⭐ {place['rating']}\n"
         caption += f"{place.get('address', '')}"
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -130,24 +135,19 @@ async def send_route(message: Message, count: int):
         else:
             await message.answer(caption, reply_markup=keyboard)
 
-    # Надсилаємо маршрут: карта + посилання
-    maps_link, map_image_url = get_directions_image_url(places)
-    if map_image_url:
-        await message.answer_photo(photo=map_image_url, caption="🗺 Ваш маршрут на мапі")
+    # Маршрут на мапі
+    maps_link, static_map_url = get_directions_image_url(places)
+    if static_map_url:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(static_map_url) as resp:
+                if resp.status == 200:
+                    photo_bytes = await resp.read()
+                    await message.answer_photo(
+                        types.BufferedInputFile(photo_bytes, filename="route.png"),
+                        caption="🗺 Побудований маршрут"
+                    )
     if maps_link:
-        await message.answer(f"👉 <a href='{maps_link}'>Пішохідний маршрут на Google Maps</a>")
-
-@dp.message(F.text.startswith("/getroute"))
-async def dev_get_route(message: Message):
-    if not is_authorized(message.from_user.id):
-        await message.reply("Цей бот ще не доступний публічно 🤓")
-        return
-    try:
-        count = int(message.text.split(" ")[1])
-    except:
-        await message.reply("Використання: /getroute 3 або /getroute 5 або /getroute 10")
-        return
-    await send_route(message, count)
+        await message.answer(f"🔗 <b>Переглянути маршрут у Google Maps:</b>\n{maps_link}")
 
 async def main():
     await dp.start_polling(bot)
