@@ -1,11 +1,12 @@
-import os
-import asyncio
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ParseMode
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from aiogram.client.default import DefaultBotProperties
 from dotenv import load_dotenv
+import asyncio
+import os
+
 from places import get_random_places, get_directions_image_url
 
 load_dotenv()
@@ -14,7 +15,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
-MY_ID = 909231739
+MY_ID = 909231739  # ЗАМІНИ на свій Telegram ID
 
 def is_authorized(user_id):
     return user_id == MY_ID
@@ -41,6 +42,40 @@ async def start_handler(message: Message):
         reply_markup=kb.as_markup(resize_keyboard=True)
     )
 
+@dp.message(F.text == "Що це таке?")
+async def what_is_it(message: Message):
+    await message.answer(
+        "\u201cОдесса навмання\u201d — це Telegram-бот, який обирає маршрут по Одесі замість тебе.\n\n"
+        "Ти натискаєш кнопку — і отримуєш маршрут з 3, 5 або 10 локацій.\n\nВсе, що треба — просто вирушити!"
+    )
+
+@dp.message(F.text == "Як це працює?")
+async def how_it_works(message: Message):
+    await message.answer(
+        "1⃣️ Обираєш кількість локацій\n"
+        "2⃣️ Отримуєш маршрут\n"
+        "3⃣️ Йдеш гуляти, досліджуєш, фотографуєш\n"
+        "4⃣️ Можеш поділитися враженнями тут ✍️"
+    )
+
+@dp.message(F.text == "Варіанти маршрутів")
+async def routes_options(message: Message):
+    await message.answer(
+        "Можна обрати маршрут на:\n\n"
+        "🔸 3 локації — коротка прогулянка\n"
+        "🔸 5 локацій — ідеально на пів дня\n"
+        "🔸 10 локацій — справжня пригода!"
+    )
+
+@dp.message(F.text == "Відгуки")
+async def reviews(message: Message):
+    await message.answer(
+        "🔹 «Думав, що знаю Одесу — але цей бот показав іншу!»\n"
+        "🔹 «Пройшли маршрут з друзями — було цікаво і незвично!»\n"
+        "🔹 «Кайф! Дуже атмосферно. Ще б на райончики 😏»\n\n"
+        "Хочеш залишити свій відгук? Напиши його у відповідь на це повідомлення ✍️"
+    )
+
 @dp.message(F.text == "Вирушити на прогулянку")
 async def self_guided(message: Message):
     kb = ReplyKeyboardBuilder()
@@ -55,7 +90,7 @@ async def self_guided(message: Message):
         "📍 <b>Маршрут з 3 локації</b>\n"
         "📍 <b>Маршрут з 5 локацій</b>\n"
         "📍 <b>Маршрут з 10 локацій</b>\n\n"
-        "Після оплати ви миттєво отримаєте локації та маршрут 🗺",
+        "Після оплати ви миттєво отримаєте маршрут і карту!",
         reply_markup=kb.as_markup(resize_keyboard=True)
     )
 
@@ -95,11 +130,10 @@ async def send_route(message: Message, count: int):
         else:
             await message.answer(caption, reply_markup=keyboard)
 
-    # Додаємо маршрутну карту
+    # Карта маршруту
     coordinates = [(p['lat'], p['lon']) for p in places]
     map_url = get_directions_image_url(coordinates)
-    if map_url:
-        await message.answer_photo(photo=map_url, caption="🗺️ Ось маршрут між точками")
+    await message.answer_photo(photo=map_url, caption="🗺 Ось твій маршрут")
 
 @dp.message(F.text.startswith("/getroute"))
 async def dev_get_route(message: Message):
