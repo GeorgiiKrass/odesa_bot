@@ -15,7 +15,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
-MY_ID = 909231739  # ЗАМІНИ на свій Telegram ID
+MY_ID = 909231739
 
 def is_authorized(user_id):
     return user_id == MY_ID
@@ -29,14 +29,14 @@ async def start_handler(message: Message):
     kb.button(text="Варіанти маршрутів")
     kb.button(text="Відгуки")
     kb.adjust(2)
-
     photo = FSInputFile("odesa_logo.jpg")
     await message.answer_photo(
         photo=photo,
         caption=(
             "<b>Привіт!</b> Це <i>Одесса навмання</i> — твоя несподівана, але продумана екскурсія містом.\n\n"
             "Ти не обираєш маршрут — маршрут обирає тебе.\n\n"
-            "Бот проведе тебе в ті місця Одеси, які ти міг роками проходити повз. Випадкові, емоційні, живі.\n\n"
+            "Бот проведе тебе в ті місця Одеси, які ти міг роками проходити повз. "
+            "Випадкові, емоційні, живі.\n\n"
             "Обери нижче, з чого хочеш почати 👇"
         ),
         reply_markup=kb.as_markup(resize_keyboard=True)
@@ -45,8 +45,9 @@ async def start_handler(message: Message):
 @dp.message(F.text == "Що це таке?")
 async def what_is_it(message: Message):
     await message.answer(
-        "\u201cОдесса навмання\u201d — це Telegram-бот, який обирає маршрут по Одесі замість тебе.\n\n"
-        "Ти натискаєш кнопку — і отримуєш маршрут з 3, 5 або 10 локацій.\n\nВсе, що треба — просто вирушити!"
+        "“Одесса навмання” — це Telegram-бот, який обирає маршрут по Одесі замість тебе. "
+        "Ти натискаєш кнопку — і отримуєш маршрут з 3, 5 або 10 локацій.\n\n"
+        "Все, що треба — просто вирушити!"
     )
 
 @dp.message(F.text == "Як це працює?")
@@ -84,13 +85,12 @@ async def self_guided(message: Message):
     kb.button(text="Маршрут з 10 локацій")
     kb.button(text="⬅ Назад")
     kb.adjust(1)
-
     await message.answer(
         "<b>Варіанти самостійних маршрутів:</b>\n\n"
         "📍 <b>Маршрут з 3 локації</b>\n"
         "📍 <b>Маршрут з 5 локацій</b>\n"
         "📍 <b>Маршрут з 10 локацій</b>\n\n"
-        "Після оплати ви миттєво отримаєте маршрут і карту!",
+        "Після натискання ти отримаєш локації та карту з маршрутом.",
         reply_markup=kb.as_markup(resize_keyboard=True)
     )
 
@@ -118,7 +118,7 @@ async def send_route(message: Message, count: int):
     for i, place in enumerate(places, 1):
         caption = f"<b>{i}. {place['name']}</b>\n"
         if place.get("rating"):
-            caption += f"⭐ {place['rating']}\n"
+            caption += f"⭐ {place['rating']} ({place.get('reviews', 0)} відгуків)\n"
         caption += f"{place.get('address', '')}"
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -130,23 +130,23 @@ async def send_route(message: Message, count: int):
         else:
             await message.answer(caption, reply_markup=keyboard)
 
-    # Карта маршруту
-    coordinates = [(p['lat'], p['lon']) for p in places]
-    map_url = get_directions_image_url(coordinates)
-    await message.answer_photo(photo=map_url, caption="🗺 Ось твій маршрут")
+    # Надсилаємо маршрут: карта + посилання
+    maps_link, map_image_url = get_directions_image_url(places)
+    if map_image_url:
+        await message.answer_photo(photo=map_image_url, caption="🗺 Ваш маршрут на мапі")
+    if maps_link:
+        await message.answer(f"👉 <a href='{maps_link}'>Пішохідний маршрут на Google Maps</a>")
 
 @dp.message(F.text.startswith("/getroute"))
 async def dev_get_route(message: Message):
     if not is_authorized(message.from_user.id):
         await message.reply("Цей бот ще не доступний публічно 🤓")
         return
-
     try:
         count = int(message.text.split(" ")[1])
     except:
         await message.reply("Використання: /getroute 3 або /getroute 5 або /getroute 10")
         return
-
     await send_route(message, count)
 
 async def main():
