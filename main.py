@@ -130,22 +130,28 @@ async def send_route(message: Message, count: int):
             await message.answer(caption, reply_markup=kb)
 
     # Картинка + Google Maps маршрут
-    map_url, maps_link = get_directions_image_url(places)
+  keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗺 Відкрити на мапі", url=place["url"])]
+        ])
 
-    if map_url:
+        if place.get("photo"):
+            await message.answer_photo(photo=place["photo"], caption=caption, reply_markup=keyboard)
+        else:
+            await message.answer(caption, reply_markup=keyboard)
+
+    # Маршрут на мапі
+    maps_link, static_map_url = get_directions_image_url(places)
+    if static_map_url:
         async with aiohttp.ClientSession() as session:
-            async with session.get(map_url) as resp:
+            async with session.get(static_map_url) as resp:
                 if resp.status == 200:
-                    photo = await resp.read()
+                    photo_bytes = await resp.read()
                     await message.answer_photo(
-                        types.BufferedInputFile(photo, filename="route.png"),
+                        types.BufferedInputFile(photo_bytes, filename="route.png"),
                         caption="🗺 Побудований маршрут"
                     )
-
     if maps_link:
-        await message.answer("🔗 <b>Відкрити повний маршрут у Google Maps:</b>", reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="🗺 Google Maps", url=maps_link)]]
-        ))
+        await message.answer(f"🔗 <b>Переглянути маршрут у Google Maps:</b>\n{maps_link}")
 
     # Відгук і підтримка
     btns = InlineKeyboardMarkup(inline_keyboard=[
