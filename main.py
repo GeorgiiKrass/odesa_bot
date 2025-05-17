@@ -1,6 +1,6 @@
 #Оновлений main.py з Monobank URL і публічним доступом до бота
 
-from aio gram import Bot, Dispatcher, types, F
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.enums import ParseMode
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
