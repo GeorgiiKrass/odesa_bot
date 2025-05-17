@@ -50,19 +50,18 @@ async def how_it_works(message: Message):
 
 @dp.message(F.text == "Вирушити на прогулянку")
 async def show_walk_options(message: Message):
-    kb = ReplyKeyboardBuilder()
-    kb.button(text="Маршрут з 3 локації")
-    kb.button(text="Маршрут з 5 локацій")
-    kb.button(text="Маршрут з 10 локацій")
-    kb.button(text="⬅ Назад")
-    kb.adjust(1)
-
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[
+        [KeyboardButton(text="Маршрут з 3 локації")],
+        [KeyboardButton(text="Маршрут з 5 локацій")],
+        [KeyboardButton(text="Маршрут з 10 локацій")],
+        [KeyboardButton(text="⬅ Назад")]
+    ])
     await message.answer(
         "<b>Обери маршрут:</b>\n\n"
         "📍 3 локації — коротка прогулянка\n"
         "📍 5 локацій — пів дня пригод\n"
         "📍 10 локацій — справжній виклик!\n",
-        reply_markup=kb.as_markup(resize_keyboard=True)
+        reply_markup=kb
     )
 
 @dp.message(F.text == "Варіанти маршрутів")
