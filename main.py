@@ -130,7 +130,7 @@ async def send_route(message: Message, count: int):
             await message.answer(caption, reply_markup=kb)
 
     # Картинка + Google Maps маршрут
-  keyboard = InlineKeyboardMarkup(inline_keyboard=[
+keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🗺 Відкрити на мапі", url=place["url"])]
         ])
 
