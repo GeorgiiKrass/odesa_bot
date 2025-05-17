@@ -1,7 +1,7 @@
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import (
     Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton,
-    KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardBuilder
+    KeyboardButton, ReplyKeyboardMarkup
 )
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
@@ -24,23 +24,22 @@ user_booking_state = {}
 # /start
 @dp.message(F.text == "/start")
 async def start_handler(message: Message):
-    kb = ReplyKeyboardBuilder()
-    kb.button(text="Що це таке?")
-    kb.button(text="Як це працює?")
-    kb.button(text="Вирушити на прогулянку")
-    kb.button(text="Варіанти маршрутів")
-    kb.button(text="Відгуки")
-    kb.button(text="Замовити прогулянку зі мною")
-    kb.button(text="Підтримати проєкт \"Одеса Навмання\"")
-    kb.adjust(2)
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[
+        [KeyboardButton(text="Що це таке?"), KeyboardButton(text="Як це працює?")],
+        [KeyboardButton(text="Вирушити на прогулянку")],
+        [KeyboardButton(text="Варіанти маршрутів")],
+        [KeyboardButton(text="Відгуки")],
+        [KeyboardButton(text="Замовити прогулянку зі мною")],
+        [KeyboardButton(text="Підтримати проєкт \"Одеса Навмання\"")]
+    ])
     photo = FSInputFile("odesa_logo.jpg")
     await message.answer_photo(
         photo=photo,
         caption="<b>Привіт!</b> Це <i>Одесса навмання</i> — твоя несподівана, але продумана екскурсія містом.\n\nТи не обираєш маршрут — маршрут обирає тебе.\n\nОбери, з чого хочеш почати 👇",
-        reply_markup=kb.as_markup(resize_keyboard=True)
+        reply_markup=kb
     )
 
-# Кнопки меню
+# Меню
 @dp.message(F.text == "Що це таке?")
 async def what_is_it(message: Message):
     await message.answer("“Одесса навмання” — це Telegram-бот, який обирає маршрут по Одесі замість тебе.\nНатискаєш кнопку — отримуєш маршрут із 3, 5 або 10 локацій.\nПросто вирушай!")
@@ -92,7 +91,7 @@ async def received_contact(message: Message):
     await bot.send_message(MY_ID, text)
     await message.answer("Дякую! Я напишу тобі найближчим часом 💬")
 
-# Генерація маршруту
+# Маршрути
 @dp.message(F.text.startswith("Маршрут з"))
 async def route_handler(message: Message):
     count = 3 if "3" in message.text else 5 if "5" in message.text else 10
@@ -124,7 +123,7 @@ async def send_route(message: Message, count: int):
     await message.answer_photo(photo=map_url, caption="🗺 Ось твій маршрут!", reply_markup=InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="🔗 Відкрити маршрут у Google Maps", url=directions_url)]]))
 
-    # Підтримати / Відгук
+    # Підтримка / Відгук
     buttons = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💛 Підтримати проєкт", url=MONOBANK_URL)],
         [InlineKeyboardButton(text="✍️ Залишити відгук", callback_data="leave_feedback")]
@@ -152,7 +151,7 @@ async def collect_feedback(message: Message):
             [InlineKeyboardButton(text="💛 Підтримати на Monobank", url=MONOBANK_URL)]
         ]))
 
-# Старт
+# Запуск
 async def main():
     await dp.start_polling(bot)
 
