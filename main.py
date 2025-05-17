@@ -129,17 +129,7 @@ async def send_route(message: Message, count: int):
         else:
             await message.answer(caption, reply_markup=kb)
 
-    # Картинка + Google Maps маршрут
-keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🗺 Відкрити на мапі", url=place["url"])]
-        ])
-
-        if place.get("photo"):
-            await message.answer_photo(photo=place["photo"], caption=caption, reply_markup=keyboard)
-        else:
-            await message.answer(caption, reply_markup=keyboard)
-
-    # Маршрут на мапі
+    # Картинка + маршрут
     maps_link, static_map_url = get_directions_image_url(places)
     if static_map_url:
         async with aiohttp.ClientSession() as session:
@@ -153,7 +143,7 @@ keyboard = InlineKeyboardMarkup(inline_keyboard=[
     if maps_link:
         await message.answer(f"🔗 <b>Переглянути маршрут у Google Maps:</b>\n{maps_link}")
 
-    # Відгук і підтримка
+    # Відгук + підтримка
     btns = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💛 Підтримати проєкт", url=MONOBANK_URL)],
         [InlineKeyboardButton(text="✍️ Залишити відгук", callback_data="leave_feedback")]
