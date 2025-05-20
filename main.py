@@ -15,7 +15,7 @@ from places import get_random_places, get_directions_image_url
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 MY_ID = int(os.getenv("MY_ID", "909231739"))
-MONOBANK_URL = "https://send.monobank.ua/jar/6B7BvEHqXG"
+PUMB_URL = "https://mobile-app.pumb.ua/VDdaNY9UzYmaK4fj8"
 
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
@@ -58,7 +58,7 @@ async def reviews(message: Message):
 @dp.message(F.text == "Підтримати проєкт \"Одеса Навмання\"")
 async def donate_handler(message: Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💛 Підтримати на Monobank", url=MONOBANK_URL)]
+        [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)]
     ])
     await message.answer("Дякуємо за підтримку! 🙏", reply_markup=keyboard)
 
@@ -145,7 +145,7 @@ async def send_route(message: Message, count: int):
 
     # Відгук + підтримка
     btns = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💛 Підтримати проєкт", url=MONOBANK_URL)],
+        [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)],
         [InlineKeyboardButton(text="✍️ Залишити відгук", callback_data="leave_feedback")]
     ])
     await message.answer("Що скажеш після прогулянки?", reply_markup=btns)
@@ -167,7 +167,7 @@ async def collect_feedback(message: Message):
         else:
             await bot.send_message(MY_ID, text)
         await message.answer("Дякую за відгук! 💌", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💛 Підтримати на Monobank", url=MONOBANK_URL)]
+            [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)]
         ]))
 
 async def main():
