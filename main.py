@@ -183,9 +183,7 @@ async def firmovyi_marshrut(message: Message):
         [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)]
     ])
     await message.answer(
-        f"1️⃣ <b>{historical_place['name']}</b>
-📍 {historical_place['address']}
-<a href='{historical_place['url']}'>🗺 Відкрити на мапі</a>",
+        f"1️⃣ <b>{historical_place['name']}</b>\n📍 {historical_place['address']}\n<a href='{historical_place['url']}'>🗺 Відкрити на мапі</a>",
         reply_markup=kb1
     )
 
