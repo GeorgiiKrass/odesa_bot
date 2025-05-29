@@ -20,7 +20,8 @@ STEP_RADIUS = 500  # для пошуку наступної точки
 def get_photo_url(photo_reference):
     return f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference={photo_reference}&key={GOOGLE_API_KEY}"
 
-def get_random_places(n=3):
+
+def get_random_places(n=3, allowed_types=None):
     all_places = []
     used_ids = set()
     used_types = set()
@@ -31,9 +32,10 @@ def get_random_places(n=3):
     radius = INITIAL_RADIUS
 
     while len(all_places) < n and attempts < 30:
-        remaining_types = list(set(ALLOWED_TYPES) - used_types)
+        types_pool = allowed_types if allowed_types else ALLOWED_TYPES
+        remaining_types = list(set(types_pool) - used_types)
         if not remaining_types:
-            remaining_types = ALLOWED_TYPES
+            remaining_types = types_pool
             used_types.clear()
 
         place_type = random.choice(remaining_types)
@@ -88,6 +90,7 @@ def get_random_places(n=3):
 
     return all_places[:n]
 
+
 def get_directions_image_url(places):
     if len(places) < 2:
         return None, None
@@ -115,3 +118,4 @@ def get_directions_image_url(places):
         maps_link += f"&waypoints={waypoints}"
 
     return maps_link, static_map_url
+
