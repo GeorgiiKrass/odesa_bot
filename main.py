@@ -173,8 +173,8 @@ async def collect_feedback(message: Message):
 
 
 # === ЛОГІКА ФІРМОВОГО МАРШРУТУ ===
-@dp.message(F.text == "🌟 Фірмовий маршрут")
-async def firmovyi_marshrut(message: Message):
+@dp.message(F.text.startswith("🌟 Фірмовий маршрут"))
+async def route_handler(message: Message):
     print("✅ Отримано запит на Фірмовий маршрут")  # Перевірка у логах
     await message.answer("🔄 Створюю фірмовий маршрут з 3 точок…")
 
