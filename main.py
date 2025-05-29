@@ -228,25 +228,25 @@ async def back_to_menu(callback: types.CallbackQuery):
     await start_handler(callback.message)
 @dp.message(F.text == "🌟 Фірмовий маршрут")
 async def firmovyi_marshrut(message: Message):
-    print("✅ Отримано запит на Фірмовий маршрут")  # для терміналу
+    print("✅ Отримано запит на Фірмовий маршрут")  # Перевірка у логах
     await message.answer("🔄 Створюю фірмовий маршрут з 3 точок…")
-    
+
     historical_types = [
         "museum", "art_gallery", "library", "church", "synagogue",
         "park", "monument", "tourist_attraction"
     ]
-    
+
     places = get_random_places(n=1, allowed_types=historical_types)
     if not places:
         await message.answer("😢 Не вдалося знайти історичну локацію.")
         return
-    
+
     place = places[0]
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➡️ Далі - GPS-рандом", callback_data="to_gps")],
         [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)]
     ])
-    
+
     await message.answer(
         f"1️⃣ <b>{place['name']}</b>\n📍 {place['address']}\n"
         f"<a href='{place['url']}'>🗺 Відкрити на мапі</a>",
