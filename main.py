@@ -44,7 +44,7 @@ def save_user(user_id: int):
         with open(USERS_FILE, "w", encoding="utf-8") as f:
             json.dump(users, f, ensure_ascii=False, indent=2)
 
-# --- Утилиты для работы с users.json ---
+# --- Утилита для рассылки ---
 async def broadcast_to_all(text: str):
     try:
         with open(USERS_FILE, "r", encoding="utf-8") as f:
@@ -54,7 +54,8 @@ async def broadcast_to_all(text: str):
     for uid in users:
         try:
             await bot.send_message(uid, text)
-        except:
+        except Exception:
+            # если не получилось — просто пропускаем
             pass
 
 
@@ -284,16 +285,18 @@ async def collect_feedback(message: Message):
         # здесь можно переслать отзыв на ваш сервер/телеграм админ-чат
         await message.answer("Дякую за відгук! 💌")
 
-# --- Админ: рассылка ---
-# --- Обработчик /broadcast ---
+# --- Хэндлер /broadcast ---
 @dp.message(F.text.startswith("/broadcast"))
 async def cmd_broadcast(message: Message):
+    # только админ может рассылать
     if message.from_user.id != MY_ID:
         return
     parts = message.text.split(" ", 1)
+    # если нет текста после команды
     if len(parts) < 2 or not parts[1].strip():
-        await message.answer("Використання: /broadcast Текст повідомлення")
+        await message.answer("Використання: /broadcast <текст повідомлення>")
         return
+
     await message.answer("Розсилаю…")
     await broadcast_to_all(parts[1])
     await message.answer("✅ Розсилка завершена.")
