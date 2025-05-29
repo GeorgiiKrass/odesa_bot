@@ -213,9 +213,7 @@ async def show_food_place(callback: types.CallbackQuery):
         [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)]
     ])
     await callback.message.answer(
-        f"3️⃣ <b>{food_place['name']}</b>
-📍 {food_place['address']}
-<a href='{food_place['url']}'>🗺 Відкрити на мапі</a>",
+        f"3️⃣ <b>{food_place['name']}</b>\n📍 {food_place['address']}\n<a href='{food_place['url']}'>🗺 Відкрити на мапі</a>",
         reply_markup=kb3
     )
 
