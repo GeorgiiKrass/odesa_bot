@@ -90,14 +90,14 @@ async def received_contact(message: Message):
     await message.answer("Дякую! Я напишу найближчим часом 💬")
 
 @dp.message(F.text == "Вирушити на прогулянку")
-async def show_walk_options(message: Message):
+async def start_walk(message: Message):
     kb = ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[
-        [KeyboardButton(text="Маршрут з 3 локації")],
-        [KeyboardButton(text="Маршрут з 5 локацій")],
-        [KeyboardButton(text="Маршрут з 10 локацій")],
-        [KeyboardButton(text="⬅ Назад")]
+        [KeyboardButton(text="🎯 Рандом з 3 локацій")],
+        [KeyboardButton(text="🎯 Рандом з 5 локацій")],
+        [KeyboardButton(text="🎯 Рандом з 10 локацій")],
+        [KeyboardButton(text="🌟 Фірмовий маршрут")]
     ])
-    await message.answer("📍 Обери маршрут:", reply_markup=kb)
+    await message.answer("Обери тип маршруту 👇", reply_markup=kb)
 
 @dp.message(F.text == "⬅ Назад")
 async def go_back(message: Message):
