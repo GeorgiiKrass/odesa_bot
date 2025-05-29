@@ -173,19 +173,6 @@ async def collect_feedback(message: Message):
 
 
 # === ЛОГІКА ФІРМОВОГО МАРШРУТУ ===
-@dp.message(F.text.contains("Фірмовий маршрут"))
-async def firmovyi_marshrut(message: Message):
-    await message.answer("🔄 Створюю фірмовий маршрут з 3 точок…")
-    historical_types = ["museum", "art_gallery", "library", "church", "synagogue", "park", "monument", "tourist_attraction"]
-    historical_place = get_random_places(n=1, allowed_types=historical_types)[0]
-    kb1 = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➡️ Далі - GPS-рандом", callback_data="to_gps")],
-        [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)]
-    ])
-    await message.answer(
-        f"1️⃣ <b>{historical_place['name']}</b>\n📍 {historical_place['address']}\n<a href='{historical_place['url']}'>🗺 Відкрити на мапі</a>",
-        reply_markup=kb1
-    )
 
 @dp.callback_query(F.data == "to_gps")
 async def show_random_gps(callback: types.CallbackQuery):
