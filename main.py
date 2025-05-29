@@ -241,16 +241,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
-
-
-@dp.message(F.text == "/start")
-async def cmd_start(message: Message):
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[
-        [KeyboardButton(text="🎯 Рандом з 3 локацій")],
-        [KeyboardButton(text="🎯 Рандом з 5 локацій")],
-        [KeyboardButton(text="🎯 Рандом з 10 локацій")],
-        [KeyboardButton(text="🌟 Фірмовий маршрут")]
-    ])
-    await message.answer("Привіт! Обери маршрут для прогулянки:", reply_markup=kb)
