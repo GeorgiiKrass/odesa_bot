@@ -232,7 +232,7 @@ async def roll_budget(callback: types.CallbackQuery):
     btns = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)],
         [InlineKeyboardButton(text="✍️ Залишити відгук", callback_data="leave_feedback")],
-        [InlineKeyboardButton(text="⬅ Повернутись в меню", callback_data="leave_feedback")]
+        [InlineKeyboardButton(text="⬅ Повернутись в меню", callback_data="back_to_menu")]
     ])
     await callback.message.answer(f"🎯 Твій бюджет: <b>{budget}</b>", reply_markup=btns)
 
