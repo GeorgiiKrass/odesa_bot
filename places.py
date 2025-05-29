@@ -4,121 +4,81 @@ import os
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-# всі типи місць
 ALLOWED_TYPES = [
-    "art_gallery", "museum", "park", "zoo", "church", "synagogue", "library",
-    "movie_theater", "restaurant", "cafe", "tourist_attraction", "amusement_park",
-    "aquarium", "book_store", "bowling_alley", "cemetery", "hindu_temple",
-    "mosque", "night_club", "shopping_mall", "stadium", "university",
-    "city_hall", "train_station", "subway_station", "light_rail_station",
-    "fountain", "plaza", "sculpture", "historical_landmark", "campground"
+    "art_gallery","museum","park","zoo","church","synagogue","library",
+    "movie_theater","restaurant","cafe","tourist_attraction","amusement_park",
+    "aquarium","book_store","bowling_alley","cemetery","hindu_temple",
+    "mosque","night_club","shopping_mall","stadium","university",
+    "city_hall","train_station","subway_station","light_rail_station",
+    "fountain","plaza","sculpture","historical_landmark","campground"
 ]
 
-CENTER_LAT, CENTER_LON = 46.4825, 30.7233  # центр Одеси
+CENTER_LAT, CENTER_LON = 46.4825, 30.7233
 INITIAL_RADIUS = 3000
-STEP_RADIUS = 500  # крок після кожної точки (метрів)
+STEP_RADIUS = 500
 
-def get_photo_url(photo_reference):
+def get_photo_url(ref):
     return (
         "https://maps.googleapis.com/maps/api/place/photo"
-        f"?maxwidth=800&photoreference={photo_reference}&key={GOOGLE_API_KEY}"
+        f"?maxwidth=800&photoreference={ref}&key={GOOGLE_API_KEY}"
     )
 
 def get_random_places(n=3, allowed_types=None):
-    """
-    Повертає список з n випадкових локацій.
-    Якщо передано allowed_types — бере тільки з цих типів.
-    """
-    types_pool = allowed_types or ALLOWED_TYPES
-    all_places = []
-    used_ids = set()
-    used_types = set()
-    current_lat, current_lon = CENTER_LAT, CENTER_LON
+    pool = allowed_types or ALLOWED_TYPES
+    res = []
+    used = set()
+    types_used = set()
+    lat, lon = CENTER_LAT, CENTER_LON
     radius = INITIAL_RADIUS
-    attempts = 0
+    tries = 0
 
-    while len(all_places) < n and attempts < 30:
-        remaining = list(set(types_pool) - used_types)
-        if not remaining:
-            remaining = types_pool
-            used_types.clear()
+    while len(res) < n and tries < 30:
+        choices = list(set(pool) - types_used)
+        if not choices:
+            choices = pool
+            types_used.clear()
+        t = random.choice(choices)
+        types_used.add(t)
 
-        place_type = random.choice(remaining)
-        used_types.add(place_type)
-
-        resp = requests.get(
+        r = requests.get(
             "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
-            params={
-                "location": f"{current_lat},{current_lon}",
-                "radius": radius,
-                "type": place_type,
-                "key": GOOGLE_API_KEY
-            }
+            params={"location":f"{lat},{lon}", "radius":radius, "type":t, "key":GOOGLE_API_KEY}
         )
-        data = resp.json().get("results", [])
-        random.shuffle(data)
-
-        for p in data:
+        items = r.json().get("results",[])
+        random.shuffle(items)
+        for p in items:
             pid = p["place_id"]
-            if pid in used_ids:
-                continue
-
-            name = p["name"]
-            lat = p["geometry"]["location"]["lat"]
-            lon = p["geometry"]["location"]["lng"]
-            url = f"https://maps.google.com/?q={lat},{lon}"
-            rating = p.get("rating")
-            address = p.get("vicinity", "Адреса не вказана")
-            photo = None
+            if pid in used: continue
+            used.add(pid)
+            nm = p["name"]
+            plat = p["geometry"]["location"]["lat"]
+            plon = p["geometry"]["location"]["lng"]
+            url = f"https://maps.google.com/?q={plat},{plon}"
+            addr = p.get("vicinity","Адреса не вказана")
+            rt = p.get("rating")
+            ph = None
             if "photos" in p:
-                ref = p["photos"][0].get("photo_reference")
-                if ref:
-                    photo = get_photo_url(ref)
-
-            all_places.append({
-                "name": name, "lat": lat, "lon": lon,
-                "url": url, "rating": rating,
-                "address": address, "photo": photo
-            })
-            used_ids.add(pid)
-            current_lat, current_lon = lat, lon
+                pr = p["photos"][0].get("photo_reference")
+                if pr: ph = get_photo_url(pr)
+            res.append({"name":nm,"lat":plat,"lon":plon,"url":url,"address":addr,"rating":rt,"photo":ph})
+            lat, lon = plat, plon
             radius = STEP_RADIUS
             break
+        tries += 1
 
-        attempts += 1
-
-    return all_places[:n]
+    return res[:n]
 
 def get_directions_image_url(places):
-    if len(places) < 2:
-        return None, None
-
+    if len(places) < 2: return None, None
     base_static = "https://maps.googleapis.com/maps/api/staticmap"
-    base_dirs = "https://www.google.com/maps/dir/?api=1"
+    base_dir = "https://www.google.com/maps/dir/?api=1"
+    marks = [f"color:blue|label:{i+1}|{p['lat']},{p['lon']}" for i,p in enumerate(places)]
+    path = "color:0x0000ff|weight:5|" + "|".join(f"{p['lat']},{p['lon']}" for p in places)
+    img_url = f"{base_static}?size=640x400&" + "&".join(f"markers={m}" for m in marks) + f"&path={path}&key={GOOGLE_API_KEY}"
 
-    markers = [
-        f"color:blue|label:{i+1}|{p['lat']},{p['lon']}"
-        for i, p in enumerate(places)
-    ]
-    path = "color:0x0000ff|weight:5|" + "|".join(
-        f"{p['lat']},{p['lon']}" for p in places
-    )
-    static_url = (
-        f"{base_static}?size=640x400&"
-        + "&".join(f"markers={m}" for m in markers)
-        + f"&path={path}&key={GOOGLE_API_KEY}"
-    )
-
-    origin = f"{places[0]['lat']},{places[0]['lon']}"
-    dest = f"{places[-1]['lat']},{places[-1]['lon']}"
-    waypoints = "|".join(
-        f"{p['lat']},{p['lon']}" for p in places[1:-1]
-    )
-    maps_link = (
-        f"{base_dirs}&origin={origin}&destination={dest}"
-        "&travelmode=walking"
-    )
-    if waypoints:
-        maps_link += f"&waypoints={waypoints}"
-
-    return maps_link, static_url
+    o = f"{places[0]['lat']},{places[0]['lon']}"
+    d = f"{places[-1]['lat']},{places[-1]['lon']}"
+    wps = "|".join(f"{p['lat']},{p['lon']}" for p in places[1:-1])
+    map_url = f"{base_dir}&origin={o}&destination={d}&travelmode=walking"
+    if wps: map_url += f"&waypoints={wps}"
+    return map_url, img_url
