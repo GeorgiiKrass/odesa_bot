@@ -173,7 +173,7 @@ async def collect_feedback(message: Message):
 
 
 # === ЛОГІКА ФІРМОВОГО МАРШРУТУ ===
-@dp.message(F.text.contains("Фірмовий маршрут"))
+@dp.message(F.text.contains("🌟 Фірмовий маршрут"))
 async def firmovyi_marshrut(message: Message):
     await message.answer("🔄 Створюю фірмовий маршрут з 3 точок…")
     historical_types = ["museum", "art_gallery", "library", "church", "synagogue", "park", "monument", "tourist_attraction"]
