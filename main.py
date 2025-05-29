@@ -5,6 +5,7 @@ from aiogram.types import (
 )
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
+from aiogram.exceptions import SkipHandler
 from dotenv import load_dotenv
 import asyncio
 import os
@@ -22,6 +23,7 @@ dp = Dispatcher()
 user_feedback_state = {}
 user_booking_state = {}
 
+# --- Основное меню ---
 @dp.message(F.text == "/start")
 async def start_handler(message: Message):
     kb = ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[
@@ -99,10 +101,30 @@ async def start_walk(message: Message):
     ])
     await message.answer("Обери тип маршруту 👇", reply_markup=kb)
 
-@dp.message(F.text == "⬅ Назад")
-async def go_back(message: Message):
-    await start_handler(message)
+# --- Фірмовий маршрут ---
+@dp.message(F.text == "🌟 Фірмовий маршрут")
+async def firmovyi_marshrut(message: Message):
+    print("✅ Отримано запит на Фірмовий маршрут")  # лог для терміналу
+    await message.answer("🔄 Створюю фірмовий маршрут з 3 точок…")
 
+    types_list = ["museum", "art_gallery", "library", "church", "synagogue", "park", "monument", "tourist_attraction"]
+    places = get_random_places(n=1, allowed_types=types_list)
+    if not places:
+        await message.answer("😢 Не вдалося знайти історичну локацію.")
+        return
+    place = places[0]
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➡️ Далі - GPS-рандом", callback_data="to_gps")],
+        [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)]
+    ])
+    await message.answer(
+        f"1️⃣ <b>{place['name']}</b>\n📍 {place['address']}\n" \
+        f"<a href='{place['url']}'>🗺 Відкрити на мапі</a>",
+        reply_markup=kb
+    )
+
+# --- Маршрут ---
 @dp.message(F.text.startswith("🎯 Рандом з"))
 async def route_handler(message: Message):
     count = 3 if "3" in message.text else 5 if "5" in message.text else 10
@@ -111,16 +133,14 @@ async def route_handler(message: Message):
 async def send_route(message: Message, count: int):
     await message.answer("🔄 Шукаю цікаві місця на мапі…")
     places = get_random_places(count)
-
     if not places:
         await message.reply("Не вдалося знайти локації 😞")
         return
-
     for i, place in enumerate(places, 1):
-        caption = f"<b>{i}. {place['name']}</b>\n"
+        caption = f"<b>{{i}}. {{place['name']}}</b>\n"
         if place.get("rating"):
-            caption += f"⭐ {place['rating']} ({place.get('reviews', 0)} відгуків)\n"
-        caption += f"{place.get('address', '')}"
+            caption += f"⭐ {{place['rating']}} ({{place.get('reviews', 0)}} відгуків)\n"
+        caption += f"{{place.get('address', '')}}"
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🗺 Відкрити на мапі", url=place["url"])]
         ])
@@ -128,28 +148,17 @@ async def send_route(message: Message, count: int):
             await message.answer_photo(photo=place["photo"], caption=caption, reply_markup=kb)
         else:
             await message.answer(caption, reply_markup=kb)
-
-    # Картинка + маршрут
     maps_link, static_map_url = get_directions_image_url(places)
     if static_map_url:
         async with aiohttp.ClientSession() as session:
             async with session.get(static_map_url) as resp:
                 if resp.status == 200:
                     photo_bytes = await resp.read()
-                    await message.answer_photo(
-                        types.BufferedInputFile(photo_bytes, filename="route.png"),
-                        caption="🗺 Побудований маршрут"
-                    )
+                    await message.answer_photo(types.BufferedInputFile(photo_bytes, filename="route.png"), caption="🗺 Побудований маршрут")
     if maps_link:
         await message.answer(f"🔗 <b>Переглянути маршрут у Google Maps:</b>\n{maps_link}")
 
-    # Відгук + підтримка
-    btns = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)],
-        [InlineKeyboardButton(text="✍️ Залишити відгук", callback_data="leave_feedback")]
-    ])
-    await message.answer("Що скажеш після прогулянки?", reply_markup=btns)
-
+# --- Зворотній зв'язок ---
 @dp.callback_query(F.data == "leave_feedback")
 async def ask_feedback(callback: types.CallbackQuery):
     user_feedback_state[callback.from_user.id] = True
@@ -157,104 +166,26 @@ async def ask_feedback(callback: types.CallbackQuery):
 
 @dp.message(F.photo | F.text)
 async def collect_feedback(message: Message):
-    if user_feedback_state.get(message.from_user.id):
-        user_feedback_state[message.from_user.id] = False
-        text = f"📝 Відгук від @{message.from_user.username or message.from_user.first_name}:\n"
-        if message.text:
-            text += message.text
-        if message.photo:
-            await bot.send_photo(MY_ID, photo=message.photo[-1].file_id, caption=text)
-        else:
-            await bot.send_message(MY_ID, text)
-        await message.answer("Дякую за відгук! 💌", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)]
-        ]))
-
-
-
-# === ЛОГІКА ФІРМОВОГО МАРШРУТУ ===
-@dp.message(F.text == "🌟 Фірмовий маршрут")
-async def firmovyi_marshrut(message: Message):
-    print("✅ Отримано запит на Фірмовий маршрут")  # Перевірка у логах
-    await message.answer("🔄 Створюю фірмовий маршрут з 3 точок…")
-
-    historical_types = [
-        "museum", "art_gallery", "library", "church", "synagogue",
-        "park", "monument", "tourist_attraction"
-    ]
-
-    places = get_random_places(n=1, allowed_types=historical_types)
-    if not places:
-        await message.answer("😢 Не вдалося знайти історичну локацію.")
-        return
-
-    place = places[0]
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➡️ Далі - GPS-рандом", callback_data="to_gps")],
+    if not user_feedback_state.get(message.from_user.id):
+        # не в стані збору фідбека — передати іншим хендлерам
+        raise SkipHandler
+    user_feedback_state[message.from_user.id] = False
+    text = f"📝 Відгук від @{{message.from_user.username or message.from_user.first_name}}:\n"
+    if message.text:
+        text += message.text
+    if message.photo:
+        await bot.send_photo(MY_ID, photo=message.photo[-1].file_id, caption=text)
+    else:
+        await bot.send_message(MY_ID, text)
+    await message.answer("Дякую за відгук! 💌", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)]
-    ])
-
-    await message.answer(
-        f"1️⃣ <b>{place['name']}</b>\n📍 {place['address']}\n"
-        f"<a href='{place['url']}'>🗺 Відкрити на мапі</a>",
-        reply_markup=kb
-    )
-    
-@dp.callback_query(F.data == "to_gps")
-async def show_random_gps(callback: types.CallbackQuery):
-    import random
-    center_lat, center_lng = 46.4825, 30.7233
-    radius = 0.045
-    rand_lat = center_lat + random.uniform(-radius, radius)
-    rand_lng = center_lng + random.uniform(-radius, radius)
-    rand_url = f"https://maps.google.com/?q={rand_lat},{rand_lng}"
-    kb2 = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➡️ Далі - Гастро-точка", callback_data="to_food")],
-        [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)]
-    ])
-    await callback.message.answer(
-        f"2️⃣ Випадкова точка\n📍 Координати: {rand_lat:.5f}, {rand_lng:.5f}\n<a href='{rand_url}'>🗺 Відкрити на мапі</a>",
-        reply_markup=kb2
-    )
-
-@dp.callback_query(F.data == "to_food")
-async def show_food_place(callback: types.CallbackQuery):
-    food_types = ["restaurant", "cafe", "bakery"]
-    food_place = get_random_places(n=1, allowed_types=food_types)[0]
-    kb3 = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎲 Обери бюджет з кубика", callback_data="roll_budget")],
-        [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)]
-    ])
-    await callback.message.answer(
-        f"3️⃣ <b>{food_place['name']}</b>\n📍 {food_place['address']}\n<a href='{food_place['url']}'>🗺 Відкрити на мапі</a>",
-        reply_markup=kb3
-    )
-
-@dp.callback_query(F.data == "roll_budget")
-async def roll_budget(callback: types.CallbackQuery):
-    import random
-    budgets = [
-        "10 грн — смак виживання",
-        "50 грн — базарний делюкс",
-        "100 грн — як місцевий",
-        "300 грн — одна страва і розмова",
-        "500 грн — їжа як пригода",
-        "Що порадить офіціант"
-    ]
-    budget = random.choice(budgets)
-    btns = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)],
-        [InlineKeyboardButton(text="✍️ Залишити відгук", callback_data="leave_feedback")],
-        [InlineKeyboardButton(text="⬅ Повернутись в меню", callback_data="back_to_menu")]
-    ])
-    await callback.message.answer(f"🎯 Твій бюджет: <b>{budget}</b>", reply_markup=btns)
-    
-@dp.callback_query(F.data == "back_to_menu")
-async def back_to_menu(callback: types.CallbackQuery):
-    await start_handler(callback.message)
+    ]))
 
 async def main():
     await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
 
 if __name__ == "__main__":
     asyncio.run(main())
