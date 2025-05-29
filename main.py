@@ -200,9 +200,7 @@ async def show_random_gps(callback: types.CallbackQuery):
         [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)]
     ])
     await callback.message.answer(
-        f"2️⃣ Випадкова точка
-📍 Координати: {rand_lat:.5f}, {rand_lng:.5f}
-<a href='{rand_url}'>🗺 Відкрити на мапі</a>",
+        f"2️⃣ Випадкова точка\n📍 Координати: {rand_lat:.5f}, {rand_lng:.5f}\n<a href='{rand_url}'>🗺 Відкрити на мапі</a>",
         reply_markup=kb2
     )
 
