@@ -1,3 +1,9 @@
+import json
+import os
+import asyncio
+import aiohttp
+import random
+
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import (
     Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton,
@@ -6,29 +12,58 @@ from aiogram.types import (
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from dotenv import load_dotenv
-import asyncio
-import os
-import aiohttp
 
 from places import get_random_places, get_directions_image_url
 
+# --- Настройки ---
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 MY_ID = int(os.getenv("MY_ID", "909231739"))
 PUMB_URL = "https://mobile-app.pumb.ua/VDdaNY9UzYmaK4fj8"
+USERS_FILE = "users.json"
 
+# --- Инициализация бота и диспетчера ---
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
-# словарь для хранения состояния бронирования
+# --- Словари состояний ---
 user_booking_state: dict[int, str] = {}
-# словарь для состояния отзывов
 user_feedback_state: dict[int, bool] = {}
+
+
+# --- Утилиты для работы с users.json ---
+def save_user(user_id: int):
+    """Добавляет user_id в users.json, если его там ещё нет."""
+    try:
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            users = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        users = []
+    if user_id not in users:
+        users.append(user_id)
+        with open(USERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(users, f, ensure_ascii=False, indent=2)
+
+async def broadcast_to_all(text: str):
+    """Рассылает text всем user_id из users.json."""
+    try:
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            users = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        users = []
+    for uid in users:
+        try:
+            await bot.send_message(uid, text)
+        except Exception:
+            pass  # игнорируем ошибки доставки
 
 
 # === СТАРТОВЫЙ МЕНЮ ===
 @dp.message(F.text == "/start")
 async def start_handler(message: Message):
+    # сохраняем пользователя при каждом запуске
+    save_user(message.from_user.id)
+
     kb = ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[
         [KeyboardButton(text="Що це таке?"), KeyboardButton(text="Як це працює?")],
         [KeyboardButton(text="Вирушити на прогулянку")],
@@ -48,6 +83,7 @@ async def start_handler(message: Message):
         reply_markup=kb
     )
 
+# === Информация ===
 @dp.message(F.text == "Що це таке?")
 async def what_is_it(message: Message):
     await message.answer(
@@ -164,10 +200,12 @@ async def send_route(message: Message, count: int):
     if static_map:
         async with aiohttp.ClientSession() as s:
             resp = await s.get(static_map)
-            if resp.status==200:
+            if resp.status == 200:
                 data = await resp.read()
-                await message.answer_photo(types.BufferedInputFile(data, filename="route.png"),
-                                           caption="🗺 Побудований маршрут")
+                await message.answer_photo(
+                    types.BufferedInputFile(data, filename="route.png"),
+                    caption="🗺 Побудований маршрут"
+                )
     if maps_link:
         await message.answer(f"🔗 <b>Переглянути маршрут у Google Maps:</b>\n{maps_link}")
     btns = InlineKeyboardMarkup(inline_keyboard=[
@@ -175,7 +213,6 @@ async def send_route(message: Message, count: int):
         [InlineKeyboardButton(text="✍️ Залишити відгук", callback_data="leave_feedback")]
     ])
     await message.answer("Що скажеш після прогулянки?", reply_markup=btns)
-
 
 # === ФІРМОВИЙ МАРШРУТ ===
 @dp.message(F.text == "🌟 Фірмовий маршрут")
