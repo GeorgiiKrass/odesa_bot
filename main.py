@@ -5,7 +5,7 @@ from aiogram.types import (
 )
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
-from aiogram.exceptions import SkipHandler
+#from aiogram.exceptions import SkipHandler
 from dotenv import load_dotenv
 import asyncio
 import os
