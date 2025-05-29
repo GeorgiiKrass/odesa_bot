@@ -44,8 +44,8 @@ def save_user(user_id: int):
         with open(USERS_FILE, "w", encoding="utf-8") as f:
             json.dump(users, f, ensure_ascii=False, indent=2)
 
+# --- Утилиты для работы с users.json ---
 async def broadcast_to_all(text: str):
-    """Рассылает text всем user_id из users.json."""
     try:
         with open(USERS_FILE, "r", encoding="utf-8") as f:
             users = json.load(f)
@@ -54,8 +54,8 @@ async def broadcast_to_all(text: str):
     for uid in users:
         try:
             await bot.send_message(uid, text)
-        except Exception:
-            pass  # игнорируем ошибки доставки
+        except:
+            pass
 
 
 # === СТАРТОВЫЙ МЕНЮ ===
@@ -285,16 +285,17 @@ async def collect_feedback(message: Message):
         await message.answer("Дякую за відгук! 💌")
 
 # --- Админ: рассылка ---
+# --- Обработчик /broadcast ---
 @dp.message(F.text.startswith("/broadcast"))
 async def cmd_broadcast(message: Message):
     if message.from_user.id != MY_ID:
         return
-    parts = message.text.split(" ",1)
-    if len(parts)<2:
+    parts = message.text.split(" ", 1)
+    if len(parts) < 2 or not parts[1].strip():
         await message.answer("Використання: /broadcast Текст повідомлення")
         return
     await message.answer("Розсилаю…")
-    await broadcast(parts[1])
+    await broadcast_to_all(parts[1])
     await message.answer("✅ Розсилка завершена.")
 
 async def main():
