@@ -103,7 +103,7 @@ async def start_walk(message: Message):
 async def go_back(message: Message):
     await start_handler(message)
 
-@dp.message(F.text.startswith("Маршрут з"))
+@dp.message(F.text.startswith("🎯 Рандом з"))
 async def route_handler(message: Message):
     count = 3 if "3" in message.text else 5 if "5" in message.text else 10
     await send_route(message, count)
