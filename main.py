@@ -175,9 +175,6 @@ async def collect_feedback(message: Message):
 # === ЛОГІКА ФІРМОВОГО МАРШРУТУ ===
 @dp.message(F.text == "🌟 Фірмовий маршрут")
 async def firmovyi_marshrut(message: Message):
-    ...
-    
-async def firmovyi_marshrut(message: Message):
     await message.answer("🔄 Створюю фірмовий маршрут з 3 точок…")
     historical_types = ["museum", "art_gallery", "library", "church", "synagogue", "park", "monument", "tourist_attraction"]
     historical_place = get_random_places(n=1, allowed_types=historical_types)[0]
@@ -238,6 +235,10 @@ async def roll_budget(callback: types.CallbackQuery):
         [InlineKeyboardButton(text="⬅ Повернутись в меню", callback_data="back_to_menu")]
     ])
     await callback.message.answer(f"🎯 Твій бюджет: <b>{budget}</b>", reply_markup=btns)
+    
+@dp.callback_query(F.data == "back_to_menu")
+async def back_to_menu(callback: types.CallbackQuery):
+    await start_handler(callback.message)
 
 async def main():
     await dp.start_polling(bot)
