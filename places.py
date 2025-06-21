@@ -1,4 +1,5 @@
 # places.py
+
 import random
 import requests
 import os
@@ -44,7 +45,8 @@ def get_random_places(n: int = 3, allowed_types: list[str] | None = None) -> lis
 
         for item in candidates:
             pid = item["place_id"]
-            if pid in used_ids: continue
+            if pid in used_ids:
+                continue
 
             lat = item["geometry"]["location"]["lat"]
             lon = item["geometry"]["location"]["lng"]
@@ -70,24 +72,45 @@ def get_random_places(n: int = 3, allowed_types: list[str] | None = None) -> lis
 
     return all_places[:n]
 
-def get_directions_image_url(places: list[dict]) -> tuple[str|None, str|None]:
-    if len(places) < 2:
-        return None, None
-    base_static = "https://maps.googleapis.com/maps/api/staticmap"
-    markers = [f"color:blue|label:{i+1}|{p['lat']},{p['lon']}" for i, p in enumerate(places)]
-    path = "color:0x0000ff|weight:5|" + "|".join(f"{p['lat']},{p['lon']}" for p in places)
-    static_url = (
-        f"{base_static}?size=640x400&" +
-        "&".join(f"markers={m}" for m in markers) +
-        f"&path={path}&key={GOOGLE_API_KEY}"
-    )
-    origin = f"{places[0]['lat']},{places[0]['lon']}"
-    dest = f"{places[-1]['lat']},{places[-1]['lon']}"
-    wayp = "|".join(f"{p['lat']},{p['lon']}" for p in places[1:-1])
-    maps_link = (
-        f"https://www.google.com/maps/dir/?api=1&origin={origin}&destination={dest}"
-        f"&travelmode=walking"
-    )
-    if wayp:
-        maps_link += f"&waypoints={wayp}"
-    return maps_link, static_url
+
+def get_random_place_near(lat: float, lon: float, radius: int, allowed_types: list[str] | None = None) -> dict | None:
+    """
+    Возвращает одну случайную локацию из Google Places API в радиусе radius метров от точки (lat, lon).
+    """
+    types_pool = allowed_types or ALLOWED_TYPES
+    used_types = set()
+    attempts = 0
+
+    while attempts < 30:
+        choices = list(set(types_pool) - used_types) or types_pool
+        t = random.choice(choices)
+        used_types.add(t)
+
+        resp = requests.get(
+            "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
+            params={"location": f"{lat},{lon}", "radius": radius, "type": t, "key": GOOGLE_API_KEY}
+        ).json()
+        candidates = resp.get("results", [])
+        random.shuffle(candidates)
+
+        for item in candidates:
+            plat = item["geometry"]["location"]["lat"]
+            plon = item["geometry"]["location"]["lng"]
+            photo = None
+            if item.get("photos"):
+                photo_ref = item["photos"][0].get("photo_reference")
+                photo = get_photo_url(photo_ref) if photo_ref else None
+
+            return {
+                "name": item["name"],
+                "lat": plat,
+                "lon": plon,
+                "url": f"https://maps.google.com/?q={plat},{plon}",
+                "rating": item.get("rating"),
+                "address": item.get("vicinity", ""),
+                "photo": photo
+            }
+
+        attempts += 1
+
+    return None
