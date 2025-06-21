@@ -283,7 +283,21 @@ async def show_food_place(callback: types.CallbackQuery):
         f"<a href='{food['url']}'>🗺</a>",
         reply_markup=kb3
     )
+@dp.callback_query(F.data == "roll_budget")
+async def roll_budget(callback: types.CallbackQuery):
+    import random
+    # вибір випадкового бюджету
+    b = random.choice(["10 грн", "50 грн", "100 грн", "300 грн", "500 грн", "Що порадить офіціант"])
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")]
+    ])
+    await callback.message.answer(f"🎯 Бюджет: <b>{b}</b>", reply_markup=kb)
+    
 
+@dp.callback_query(F.data == "back_to_menu")
+async def back_to_menu(callback: types.CallbackQuery):
+    # повертаємось у головне меню викликом стартового хендлера
+    await start_handler(callback.message)
 
 # === ВІДГУК ===
 @dp.callback_query(F.data == "leave_feedback")
