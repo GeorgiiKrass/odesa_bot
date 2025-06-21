@@ -209,29 +209,81 @@ async def send_route(message: Message, count: int):
     await message.answer("Що скажеш після прогулянки?", reply_markup=btns)
 
 # === ФІРМОВИЙ МАРШРУТ ===
+
 @dp.message(F.text == "🌟 Фірмовий маршрут")
 async def firmovyi_marshrut(message: Message):
     await message.answer("🔄 Створюю фірмовий маршрут з 3 точок…")
-    # Первая (історична) точка
+    # 1️⃣ Перша (історична) точка — без змін
     hist = ["museum", "art_gallery", "library", "church", "synagogue", "park", "tourist_attraction"]
     first = get_random_places(1, allowed_types=hist)[0]
 
-    # Вторая точка — случайная локация из Google Maps в радиусе 700 м от первой
-    second = get_random_place_near(first["lat"], first["lon"], radius=700)
-    if not second:
-        return await message.answer("Не вдалося знайти другу точку поруч з першою.")
-
-    # Третья точка — случайная локация из Google Maps в радиусе 700 м от второй
-    third = get_random_place_near(second["lat"], second["lon"], radius=700)
-    if not third:
-        return await message.answer("Не вдалося знайти третю точку поруч з другою.")
-
-    route = [first, second, third]
-    maps_link, static_map = get_directions_image_url(route)
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🗺 Відкрити маршрут у Google Maps", url=maps_link)]
+    # Передаємо координати першої точки в callback_data
+    kb1 = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="➡️ Далі — GPS-рандом",
+            callback_data=f"to_gps:{first['lat']}:{first['lon']}"
+        )],
+        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")]
     ])
-    await message.answer_photo(static_map, reply_markup=kb)
+    await message.answer(
+        f"1️⃣ <b>{first['name']}</b>\n"
+        f"📍 {first['address']}\n"
+        f"<a href='{first['url']}'>🗺</a>",
+        reply_markup=kb1
+    )
+
+@dp.callback_query(F.data.startswith("to_gps"))
+async def show_random_gps(callback: types.CallbackQuery):
+    # Розбираємо координати першої точки
+    _, lat_str, lon_str = callback.data.split(":")
+    lat0, lon0 = float(lat_str), float(lon_str)
+
+    # 2️⃣ Друга точка — рандомна з Google Maps у радіусі 700 м від першої
+    second = get_random_place_near(lat0, lon0, radius=700)
+    if not second:
+        return await callback.message.answer("Не вдалося знайти другу точку поруч з першою.")
+
+    # Передаємо координати другої точки далі
+    kb2 = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="➡️ Далі — Гастро-точка",
+            callback_data=f"to_food:{second['lat']}:{second['lon']}"
+        )],
+        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")]
+    ])
+    await callback.message.answer(
+        f"2️⃣ <b>{second['name']}</b>\n"
+        f"📍 {second['address']}\n"
+        f"<a href='{second['url']}'>🗺</a>",
+        reply_markup=kb2
+    )
+
+@dp.callback_query(F.data.startswith("to_food"))
+async def show_food_place(callback: types.CallbackQuery):
+    # Розбираємо координати другої точки
+    _, lat_str, lon_str = callback.data.split(":")
+    lat_prev, lon_prev = float(lat_str), float(lon_str)
+
+    # 3️⃣ Третя точка — гастро-точка в межах 700 м від другої
+    food = get_random_place_near(
+        lat_prev, lon_prev,
+        radius=700,
+        allowed_types=["restaurant", "cafe", "bakery"]
+    )
+    if not food:
+        return await callback.message.answer("Не вдалося знайти третю точку поруч з другою.")
+
+    kb3 = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎲 Кубик бюджету", callback_data="roll_budget")],
+        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")]
+    ])
+    await callback.message.answer(
+        f"3️⃣ <b>{food['name']}</b>\n"
+        f"📍 {food['address']}\n"
+        f"<a href='{food['url']}'>🗺</a>",
+        reply_markup=kb3
+    )
+
 
 # === ВІДГУК ===
 @dp.callback_query(F.data == "leave_feedback")
