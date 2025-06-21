@@ -19,11 +19,13 @@ CENTER_LAT, CENTER_LON = 46.4825, 30.7233
 INITIAL_RADIUS = 3000
 STEP_RADIUS = 500
 
+
 def get_photo_url(photo_reference: str) -> str:
     return (
         f"https://maps.googleapis.com/maps/api/place/photo?"
         f"maxwidth=800&photoreference={photo_reference}&key={GOOGLE_API_KEY}"
     )
+
 
 def get_random_places(n: int = 3, allowed_types: list[str] | None = None) -> list[dict]:
     types_pool = allowed_types or ALLOWED_TYPES
@@ -114,3 +116,26 @@ def get_random_place_near(lat: float, lon: float, radius: int, allowed_types: li
         attempts += 1
 
     return None
+
+
+def get_directions_image_url(places: list[dict]) -> tuple[str|None, str|None]:
+    if len(places) < 2:
+        return None, None
+    base_static = "https://maps.googleapis.com/maps/api/staticmap"
+    markers = [f"color:blue|label:{i+1}|{p['lat']},{p['lon']}" for i, p in enumerate(places)]
+    path = "color:0x0000ff|weight:5|" + "|".join(f"{p['lat']},{p['lon']}" for p in places)
+    static_url = (
+        f"{base_static}?size=640x400&" +
+        "&".join(f"markers={m}" for m in markers) +
+        f"&path={path}&key={GOOGLE_API_KEY}"
+    )
+    origin = f"{places[0]['lat']},{places[0]['lon']}"
+    dest = f"{places[-1]['lat']},{places[-1]['lon']}"
+    wayp = "|".join(f"{p['lat']},{p['lon']}" for p in places[1:-1])
+    maps_link = (
+        f"https://www.google.com/maps/dir/?api=1&origin={origin}&destination={dest}"
+        f"&travelmode=walking"
+    )
+    if wayp:
+        maps_link += f"&waypoints={wayp}"
+    return maps_link, static_url
