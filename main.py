@@ -13,7 +13,7 @@ from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from dotenv import load_dotenv
 
-from places import get_random_places, get_directions_image_url
+from places import get_random_places, get_random_place_near, get_directions_image_url
 
 # --- Настройки ---
 load_dotenv()
@@ -29,7 +29,6 @@ dp = Dispatcher()
 # --- Словари состояний ---
 user_booking_state: dict[int, str] = {}
 user_feedback_state: dict[int, bool] = {}
-
 
 # --- Утилиты для работы с users.json ---
 def save_user(user_id: int):
@@ -55,16 +54,12 @@ async def broadcast_to_all(text: str):
         try:
             await bot.send_message(uid, text)
         except Exception:
-            # если не получилось — просто пропускаем
             pass
-
 
 # === СТАРТОВЫЙ МЕНЮ ===
 @dp.message(F.text == "/start")
 async def start_handler(message: Message):
-    # сохраняем пользователя при каждом запуске
     save_user(message.from_user.id)
-
     kb = ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[
         [KeyboardButton(text="Що це таке?"), KeyboardButton(text="Як це працює?")],
         [KeyboardButton(text="Вирушити на прогулянку")],
@@ -124,7 +119,6 @@ async def donate_handler(message: Message):
     ])
     await message.answer("Дякуємо за підтримку! 🙏", reply_markup=keyboard)
 
-
 # === ЗАКАЗ ПРОГУЛЯНКИ ===
 @dp.message(F.text == "Замовити прогулянку зі мною")
 async def book_me(message: Message):
@@ -157,7 +151,6 @@ async def received_contact(message: Message):
     )
     await bot.send_message(MY_ID, summary)
     await message.answer("Дякую! Я зв’яжусь з тобою найближчим часом 💬")
-
 
 # === ПРОГУЛЯНКА ===
 @dp.message(F.text == "Вирушити на прогулянку")
@@ -219,58 +212,26 @@ async def send_route(message: Message, count: int):
 @dp.message(F.text == "🌟 Фірмовий маршрут")
 async def firmovyi_marshrut(message: Message):
     await message.answer("🔄 Створюю фірмовий маршрут з 3 точок…")
+    # Первая (історична) точка
     hist = ["museum", "art_gallery", "library", "church", "synagogue", "park", "tourist_attraction"]
     first = get_random_places(1, allowed_types=hist)[0]
-    kb1 = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➡️ Далі — GPS-рандом", callback_data="to_gps")],
-        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")]
-    ])
-    await message.answer(
-        f"1️⃣ <b>{first['name']}</b>\n📍 {first['address']}\n"
-        f"<a href='{first['url']}'>🗺</a>",
-        reply_markup=kb1
-    )
 
-@dp.callback_query(F.data == "to_gps")
-async def show_random_gps(callback: types.CallbackQuery):
-    import random
-    lat0, lon0, r = 46.4825, 30.7233, 0.045
-    lat, lon = lat0+random.uniform(-r,r), lon0+random.uniform(-r,r)
-    url = f"https://maps.google.com/?q={lat},{lon}"
+    # Вторая точка — случайная локация из Google Maps в радиусе 700 м от первой
+    second = get_random_place_near(first["lat"], first["lon"], radius=700)
+    if not second:
+        return await message.answer("Не вдалося знайти другу точку поруч з першою.")
+
+    # Третья точка — случайная локация из Google Maps в радиусе 700 м от второй
+    third = get_random_place_near(second["lat"], second["lon"], radius=700)
+    if not third:
+        return await message.answer("Не вдалося знайти третю точку поруч з другою.")
+
+    route = [first, second, third]
+    maps_link, static_map = get_directions_image_url(route)
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➡️ Далі — Гастро-точка", callback_data="to_food")],
-        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")]
+        [InlineKeyboardButton(text="🗺 Відкрити маршрут у Google Maps", url=maps_link)]
     ])
-    await callback.message.answer(
-        f"2️⃣ Випадкова точка\n📍 {lat:.5f},{lon:.5f}\n<a href='{url}'>🗺</a>",
-        reply_markup=kb
-    )
-
-@dp.callback_query(F.data == "to_food")
-async def show_food_place(callback: types.CallbackQuery):
-    food = get_random_places(1, allowed_types=["restaurant","cafe","bakery"])[0]
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎲 Кубик бюджету", callback_data="roll_budget")],
-        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")]
-    ])
-    await callback.message.answer(
-        f"3️⃣ <b>{food['name']}</b>\n📍 {food['address']}\n<a href='{food['url']}'>🗺</a>",
-        reply_markup=kb
-    )
-
-@dp.callback_query(F.data == "roll_budget")
-async def roll_budget(callback: types.CallbackQuery):
-    import random
-    b = random.choice(["10 грн","50 грн","100 грн","300 грн","500 грн","Що порадить офіціант"])
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")]
-    ])
-    await callback.message.answer(f"🎯 Бюджет: <b>{b}</b>", reply_markup=kb)
-
-@dp.callback_query(F.data == "back_to_menu")
-async def back_to_menu(callback: types.CallbackQuery):
-    await start_handler(callback.message)
-
+    await message.answer_photo(static_map, reply_markup=kb)
 
 # === ВІДГУК ===
 @dp.callback_query(F.data == "leave_feedback")
@@ -282,21 +243,16 @@ async def ask_feedback(callback: types.CallbackQuery):
 async def collect_feedback(message: Message):
     if user_feedback_state.get(message.from_user.id):
         user_feedback_state.pop(message.from_user.id, None)
-        # здесь можно переслать отзыв на ваш сервер/телеграм админ-чат
         await message.answer("Дякую за відгук! 💌")
 
 # --- Хэндлер /broadcast ---
 @dp.message(F.text.startswith("/broadcast"))
 async def cmd_broadcast(message: Message):
-    # только админ может рассылать
     if message.from_user.id != MY_ID:
         return
     parts = message.text.split(" ", 1)
-    # если нет текста после команды
     if len(parts) < 2 or not parts[1].strip():
-        await message.answer("Використання: /broadcast <текст повідомлення>")
-        return
-
+        return await message.answer("Використання: /broadcast <текст повідомлення>")
     await message.answer("Розсилаю…")
     await broadcast_to_all(parts[1])
     await message.answer("✅ Розсилка завершена.")
@@ -307,3 +263,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
