@@ -287,7 +287,7 @@ async def show_food_place(callback: types.CallbackQuery):
 async def roll_budget(callback: types.CallbackQuery):
     import random
     # вибір випадкового бюджету
-    b = random.choice(["10 грн", "50 грн", "100 грн", "300 грн", "500 грн", "Що порадить офіціант"])
+    b = random.choice(["1000 грн", "750 грн", "100 грн", "300 грн", "500 грн", "1500 грн"])
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")]
     ])
