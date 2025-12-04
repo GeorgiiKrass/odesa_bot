@@ -1,5 +1,3 @@
-# places.py
-
 import os
 import random
 from typing import List, Dict, Optional, Tuple
@@ -13,8 +11,9 @@ CENTER_LAT = 46.482952
 CENTER_LON = 30.712481
 
 # Радіуси пошуку в метрах
-INITIAL_RADIUS = 1500
-MAX_RADIUS = 5000
+# Тепер жорстко обмежуємося 700 м, як ти просив
+INITIAL_RADIUS = 700
+MAX_RADIUS = 700
 
 # Типи закладів / місць, які можемо підбирати
 ALLOWED_TYPES = [
@@ -61,7 +60,7 @@ def _place_from_item(item: Dict) -> Dict:
         "reviews": item.get("user_ratings_total", 0),
         "address": item.get("vicinity", "") or item.get("formatted_address", ""),
         "photo": photo,
-        "place_id": item.get("place_id"),  # <-- додали place_id
+        "place_id": item.get("place_id"),  # place_id для відгуків по місцю
     }
 
 
@@ -75,6 +74,10 @@ def get_random_places(
     Повертає список з n випадкових локацій.
     Якщо start_lat/start_lon задані — стартуємо від цих координат,
     інакше — від центру Одеси.
+
+    ВАЖЛИВО:
+    - Радіус пошуку жорстко 700 м (INITIAL_RADIUS / MAX_RADIUS).
+    - Беремо тільки місця, де є відгуки (user_ratings_total > 0).
     """
     if not GOOGLE_API_KEY:
         # Без ключа ми не можемо звернутися до Google Places API
@@ -119,6 +122,10 @@ def get_random_places(
             if not pid or pid in used_ids:
                 continue
 
+            # ⚠️ Фільтр: беремо тільки місця з відгуками
+            if item.get("user_ratings_total", 0) <= 0:
+                continue
+
             place = _place_from_item(item)
             all_places.append(place)
             used_ids.add(pid)
@@ -129,9 +136,10 @@ def get_random_places(
             picked = True
             break
 
-        # якщо нічого не знайшли для цього типу — трохи розширюємо радіус
+        # якщо нічого не знайшли для цього типу — могло б розширювати радіус,
+        # але ми тримаємо MAX_RADIUS = 700, тому далі ніж 700 м не йдемо
         if not picked and radius < MAX_RADIUS:
-            radius = min(radius + 500, MAX_RADIUS)
+            radius = min(radius + 100, MAX_RADIUS)
 
     return all_places[:n]
 
@@ -139,12 +147,15 @@ def get_random_places(
 def get_random_place_near(
     lat: float,
     lon: float,
-    radius: int = 1500,
+    radius: int = 700,
     allowed_types: Optional[List[str]] = None,
 ) -> Optional[Dict]:
     """
     Повертає одну випадкову локацію поблизу заданих координат.
     Використовується у «фірмовому маршруті».
+
+    - Радіус за замовчуванням 700 м.
+    - Беремо тільки місця з відгуками.
     """
     if not GOOGLE_API_KEY:
         return None
@@ -174,6 +185,9 @@ def get_random_place_near(
         random.shuffle(candidates)
 
         for item in candidates:
+            # ⚠️ тільки місця з відгуками
+            if item.get("user_ratings_total", 0) <= 0:
+                continue
             return _place_from_item(item)
 
     return None
