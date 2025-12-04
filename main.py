@@ -232,7 +232,7 @@ async def start_from_center(message: Message):
         count = data.get("count", 3)
         await send_route(message, count)
     elif mode == "firm":
-        # старт фірмового маршруту від центру (start_lat/start_lon = None -> центр всередині places.get_random_places)
+        # старт фірмового маршруту від центру (start_lat/start_lon = None)
         await start_firm_route(message, start_lat=None, start_lon=None)
     else:
         await message.answer("Щось пішло не так. Спробуй ще раз обрати маршрут.")
@@ -494,3 +494,39 @@ async def broadcast_to_all(text: str):
     users = load_all_users()
     if not users:
         await bot.send_message(MY_ID, "В базі поки немає користувачів для розсилки.")
+        return
+
+    ok, fail = 0, 0
+    for uid in users:
+        try:
+            await bot.send_message(uid, text)
+            ok += 1
+            await asyncio.sleep(0.05)
+        except Exception:
+            fail += 1
+
+    await bot.send_message(
+        MY_ID,
+        f"Розсилка завершена.\nУспішно: {ok}\nПомилок: {fail}"
+    )
+
+
+@dp.message(F.text.startswith("/broadcast"))
+async def admin_broadcast(message: Message):
+    if message.from_user.id != MY_ID:
+        return
+    parts = message.text.split(" ", 1)
+    if len(parts) < 2 or not parts[1].strip():
+        return await message.answer("Використання: /broadcast <текст повідомлення>")
+    await message.answer("Розсилаю…")
+    await broadcast_to_all(parts[1])
+    await message.answer("✅ Розсилка завершена.")
+
+
+async def main():
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
