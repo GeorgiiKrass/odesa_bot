@@ -1,6 +1,6 @@
 import os
 import random
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Set
 
 import requests
 
@@ -11,7 +11,7 @@ CENTER_LAT = 46.482952
 CENTER_LON = 30.712481
 
 # Радіуси пошуку в метрах
-# Тепер жорстко обмежуємося 700 м, як ти просив
+# Жорстко обмежуємося 700 м між точками
 INITIAL_RADIUS = 700
 MAX_RADIUS = 700
 
@@ -60,7 +60,7 @@ def _place_from_item(item: Dict) -> Dict:
         "reviews": item.get("user_ratings_total", 0),
         "address": item.get("vicinity", "") or item.get("formatted_address", ""),
         "photo": photo,
-        "place_id": item.get("place_id"),  # place_id для відгуків по місцю
+        "place_id": item.get("place_id"),  # place_id для відгуків і унікальності
     }
 
 
@@ -69,19 +69,22 @@ def get_random_places(
     allowed_types: Optional[List[str]] = None,
     start_lat: Optional[float] = None,
     start_lon: Optional[float] = None,
+    excluded_ids: Optional[Set[str]] = None,
 ) -> List[Dict]:
     """
     Повертає список з n випадкових локацій.
     Якщо start_lat/start_lon задані — стартуємо від цих координат,
     інакше — від центру Одеси.
 
-    ВАЖЛИВО:
-    - Радіус пошуку жорстко 700 м (INITIAL_RADIUS / MAX_RADIUS).
+    Обмеження:
+    - Радіус пошуку 700 м (INITIAL_RADIUS / MAX_RADIUS).
     - Беремо тільки місця, де є відгуки (user_ratings_total > 0).
+    - Не повертаємо place_id, які в excluded_ids.
     """
     if not GOOGLE_API_KEY:
-        # Без ключа ми не можемо звернутися до Google Places API
         return []
+
+    excluded_ids = excluded_ids or set()
 
     types_pool = allowed_types or ALLOWED_TYPES
     all_places: List[Dict] = []
@@ -97,7 +100,6 @@ def get_random_places(
     while len(all_places) < n and attempts < 40:
         attempts += 1
 
-        # намагаємося не повторювати типи підряд, щоб був мікс локацій
         choices = list(set(types_pool) - used_types) or types_pool
         t = random.choice(choices)
         used_types.add(t)
@@ -119,10 +121,14 @@ def get_random_places(
         picked = False
         for item in candidates:
             pid = item.get("place_id")
-            if not pid or pid in used_ids:
+            if not pid:
                 continue
 
-            # ⚠️ Фільтр: беремо тільки місця з відгуками
+            # ⚠️ фільтр: не показуємо вже використані для цього юзера place_id
+            if pid in used_ids or pid in excluded_ids:
+                continue
+
+            # ⚠️ фільтр: тільки місця з відгуками
             if item.get("user_ratings_total", 0) <= 0:
                 continue
 
@@ -130,14 +136,11 @@ def get_random_places(
             all_places.append(place)
             used_ids.add(pid)
 
-            # наступний пошук робимо вже з цієї точки, щоб «маршрут» рухався містом
             current_lat = place["lat"]
             current_lon = place["lon"]
             picked = True
             break
 
-        # якщо нічого не знайшли для цього типу — могло б розширювати радіус,
-        # але ми тримаємо MAX_RADIUS = 700, тому далі ніж 700 м не йдемо
         if not picked and radius < MAX_RADIUS:
             radius = min(radius + 100, MAX_RADIUS)
 
@@ -149,6 +152,7 @@ def get_random_place_near(
     lon: float,
     radius: int = 700,
     allowed_types: Optional[List[str]] = None,
+    excluded_ids: Optional[Set[str]] = None,
 ) -> Optional[Dict]:
     """
     Повертає одну випадкову локацію поблизу заданих координат.
@@ -156,9 +160,12 @@ def get_random_place_near(
 
     - Радіус за замовчуванням 700 м.
     - Беремо тільки місця з відгуками.
+    - Не повертаємо place_id з excluded_ids.
     """
     if not GOOGLE_API_KEY:
         return None
+
+    excluded_ids = excluded_ids or set()
 
     types_pool = allowed_types or ALLOWED_TYPES
     used_types = set()
@@ -185,9 +192,16 @@ def get_random_place_near(
         random.shuffle(candidates)
 
         for item in candidates:
-            # ⚠️ тільки місця з відгуками
+            pid = item.get("place_id")
+            if not pid:
+                continue
+
+            if pid in excluded_ids:
+                continue
+
             if item.get("user_ratings_total", 0) <= 0:
                 continue
+
             return _place_from_item(item)
 
     return None
@@ -202,7 +216,6 @@ def get_directions_image_url(places: List[Dict]) -> Tuple[Optional[str], Optiona
     if not places:
         return None, None
 
-    # Якщо лише одна точка — просто карта й пошук
     if len(places) == 1:
         p = places[0]
         origin = f"{p['lat']},{p['lon']}"
@@ -218,9 +231,7 @@ def get_directions_image_url(places: List[Dict]) -> Tuple[Optional[str], Optiona
         )
         return maps_link, static_url
 
-    # Статична карта з маркерами та шляхом
     if not GOOGLE_API_KEY:
-        # навіть без ключа можемо хоча б дати maps_link
         origin = f"{places[0]['lat']},{places[0]['lon']}"
         dest = f"{places[-1]['lat']},{places[-1]['lon']}"
         wayp = "|".join(f"{p['lat']},{p['lon']}" for p in places[1:-1])
