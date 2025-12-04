@@ -3,6 +3,7 @@ import os
 import asyncio
 import aiohttp
 import random
+from math import radians, sin, cos, asin, sqrt
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import (
@@ -13,7 +14,13 @@ from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from dotenv import load_dotenv
 
-from places import get_random_places, get_random_place_near, get_directions_image_url
+from places import (
+    get_random_places,
+    get_random_place_near,
+    get_directions_image_url,
+    CENTER_LAT,
+    CENTER_LON,
+)
 
 # --- Налаштування ---
 load_dotenv()
@@ -21,9 +28,10 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 MY_ID = int(os.getenv("MY_ID", "909231739"))
 PUMB_URL = "https://mobile-app.pumb.ua/VDdaNY9UzYmaK4fj8"
 USERS_FILE = "users.json"
+VISITED_FILE = "visited.json"
 
 # Google Maps review links
-REVIEWS_MAIN_LINK = "https://share.google/iUAPUiXnjQ0uOOhzk"   # кнопка «Відгуки» в меню
+REVIEWS_MAIN_LINK = "https://share.google/iUAPUiXnjQ0uOOhzk"   # якщо захочеш повернути кнопку «Відгуки»
 REVIEWS_BOT_LINK = "https://g.page/r/CYKKZ6sJyKz0EAE/review"   # «Залишити відгук про цей БОТ»
 
 # --- Ініціалізація бота і диспетчера ---
@@ -62,6 +70,62 @@ def load_all_users() -> list[int]:
     return users
 
 
+def load_visited(user_id: int) -> set[str]:
+    """
+    Повертає множину place_id, які вже показували цьому користувачу.
+    """
+    try:
+        with open(VISITED_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        data = {}
+
+    ids = data.get(str(user_id), [])
+    return set(ids)
+
+
+def add_visited(user_id: int, place_ids: list[str]):
+    """
+    Додає нові place_id до visited.json для користувача.
+    """
+    if not place_ids:
+        return
+
+    try:
+        with open(VISITED_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        data = {}
+
+    cur = set(data.get(str(user_id), []))
+    for pid in place_ids:
+        if pid:
+            cur.add(pid)
+
+    # за бажанням можна обмежити історію, наприклад останні 500
+    trimmed = list(cur)[-500:]
+
+    data[str(user_id)] = trimmed
+
+    with open(VISITED_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """
+    Повертає відстань між двома точками (lat/lon) в метрах.
+    Формула гаверсинуса.
+    """
+    R = 6371000  # радіус Землі в метрах
+    phi1, phi2 = radians(lat1), radians(lat2)
+    dphi = radians(lat2 - lat1)
+    dlambda = radians(lon2 - lon1)
+
+    a = sin(dphi / 2) ** 2 + cos(phi1) * cos(phi2) * sin(dlambda / 2) ** 2
+    c = 2 * asin(sqrt(a))
+    return R * c
+
+
 # --- Стартове меню ---
 @dp.message(F.text == "/start")
 async def start_handler(message: Message):
@@ -98,11 +162,14 @@ async def how_bot_works(message: Message):
 async def random_recommendation(message: Message):
     await message.answer("🔍 Шукаю для тебе цікаве місце в Одесі…")
 
-    places = get_random_places(1)
+    user_id = message.from_user.id
+    visited = load_visited(user_id)
+    places = get_random_places(1, excluded_ids=visited)
     if not places:
         return await message.reply("Не вдалося знайти локацію 😞 Спробуй ще раз трохи пізніше.")
 
     p = places[0]
+
     caption = f"<b>{p['name']}</b>\n"
     if p.get("rating"):
         caption += f"⭐ {p['rating']} ({p.get('reviews', 0)} відгуків)\n"
@@ -123,6 +190,10 @@ async def random_recommendation(message: Message):
         await message.answer_photo(photo=p["photo"], caption=caption, reply_markup=kb)
     else:
         await message.answer(caption, reply_markup=kb)
+
+    # зберігаємо як відвідане
+    if p.get("place_id"):
+        add_visited(user_id, [p["place_id"]])
 
     btns = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)],
@@ -191,7 +262,10 @@ async def send_route(
     start_lon: float | None = None,
 ):
     await message.answer("🔄 Шукаю цікаві місця на мапі…")
-    places = get_random_places(count, start_lat=start_lat, start_lon=start_lon)
+
+    user_id = message.from_user.id
+    visited = load_visited(user_id)
+    places = get_random_places(count, start_lat=start_lat, start_lon=start_lon, excluded_ids=visited)
     if not places:
         return await message.reply("Не вдалося знайти локації 😞")
 
@@ -214,6 +288,10 @@ async def send_route(
             await message.answer_photo(photo=p["photo"], caption=caption, reply_markup=kb)
         else:
             await message.answer(caption, reply_markup=kb)
+
+    # позначаємо всі місця як відвідані
+    new_ids = [p["place_id"] for p in places if p.get("place_id")]
+    add_visited(user_id, new_ids)
 
     maps_link, static_map = get_directions_image_url(places)
     if static_map:
@@ -251,7 +329,6 @@ async def start_from_center(message: Message):
         count = data.get("count", 3)
         await send_route(message, count)
     elif mode == "firm":
-        # старт фірмового маршруту від центру (start_lat/start_lon = None)
         await start_firm_route(message, start_lat=None, start_lon=None)
     else:
         await message.answer("Щось пішло не так. Спробуй ще раз обрати маршрут.")
@@ -286,7 +363,6 @@ async def start_from_user_location(message: Message):
 async def handle_location(message: Message):
     data = user_route_state.pop(message.from_user.id, None)
     if not data or data.get("status") != "waiting_location":
-        # геолокація не в контексті вибору маршруту
         return
 
     lat = message.location.latitude
@@ -294,6 +370,25 @@ async def handle_location(message: Message):
 
     mode = data.get("mode", "random")
 
+    # Перевіряємо, чи користувач в радіусі 10 км від центру Одеси
+    dist = distance_m(lat, lon, CENTER_LAT, CENTER_LON)
+
+    if dist > 10000:  # 10 км
+        await message.answer(
+            "Здається, ти зараз не в Одесі (я працюю лише в межах ~10 км від центру міста).\n"
+            "Тому побудую маршрут від центру Одеси 🏙"
+        )
+
+        if mode == "random":
+            count = data.get("count", 3)
+            await send_route(message, count)
+        elif mode == "firm":
+            await start_firm_route(message)
+        else:
+            await message.answer("Щось пішло не так. Спробуй ще раз обрати маршрут.")
+        return
+
+    # Якщо все ок — будуємо від поточної локації
     if mode == "random":
         count = data.get("count", 3)
         await send_route(message, count, start_lat=lat, start_lon=lon)
@@ -341,7 +436,17 @@ async def start_firm_route(
     await message.answer("🔄 Створюю фірмовий маршрут з 3 точок…")
 
     hist_types = ["museum", "art_gallery", "library", "church", "synagogue", "park", "tourist_attraction"]
-    first_list = get_random_places(1, allowed_types=hist_types, start_lat=start_lat, start_lon=start_lon)
+
+    user_id = message.from_user.id
+    visited = load_visited(user_id)
+
+    first_list = get_random_places(
+        1,
+        allowed_types=hist_types,
+        start_lat=start_lat,
+        start_lon=start_lon,
+        excluded_ids=visited,
+    )
     if not first_list:
         await message.answer("Не вдалося знайти першу історичну точку 😞")
         return
@@ -349,6 +454,7 @@ async def start_firm_route(
     first = first_list[0]
 
     if first.get("place_id"):
+        add_visited(user_id, [first["place_id"]])
         first_review_url = f"https://search.google.com/local/writereview?placeid={first['place_id']}"
     else:
         first_review_url = first["url"]
@@ -376,20 +482,22 @@ async def start_firm_route(
 
 @dp.callback_query(F.data.startswith("firm_to_gps:"))
 async def firm_to_gps_step(callback: types.CallbackQuery):
-    # Розбираємо координати першої точки
     _, lat_str, lon_str = callback.data.split(":")
     lat_first, lon_first = float(lat_str), float(lon_str)
 
     await callback.answer()
     await callback.message.answer("📍 Обираю наступну точку поруч з першою…")
 
-    # 2️⃣ Друга точка — GPS-рандом поблизу першої
-    second = get_random_place_near(lat_first, lon_first)
+    user_id = callback.from_user.id
+    visited = load_visited(user_id)
+
+    second = get_random_place_near(lat_first, lon_first, excluded_ids=visited)
     if not second:
         await callback.message.answer("Не вдалося знайти другу точку 😞")
         return
 
     if second.get("place_id"):
+        add_visited(user_id, [second["place_id"]])
         second_review_url = f"https://search.google.com/local/writereview?placeid={second['place_id']}"
     else:
         second_review_url = second["url"]
@@ -417,20 +525,29 @@ async def firm_to_gps_step(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data.startswith("firm_to_food:"))
 async def firm_to_food_place(callback: types.CallbackQuery):
-    # Розбираємо координати другої точки
     _, lat_str, lon_str = callback.data.split(":")
     lat_prev, lon_prev = float(lat_str), float(lon_str)
 
     await callback.answer()
     await callback.message.answer("🍽 Шукаю гастроточку поблизу…")
 
+    user_id = callback.from_user.id
+    visited = load_visited(user_id)
+
     food_types = ["restaurant", "cafe"]
-    third = get_random_place_near(lat_prev, lon_prev, radius=700, allowed_types=food_types)
+    third = get_random_place_near(
+        lat_prev,
+        lon_prev,
+        radius=700,
+        allowed_types=food_types,
+        excluded_ids=visited,
+    )
     if not third:
         await callback.message.answer("Не вдалося знайти гастроточку 😞")
         return
 
     if third.get("place_id"):
+        add_visited(user_id, [third["place_id"]])
         third_review_url = f"https://search.google.com/local/writereview?placeid={third['place_id']}"
     else:
         third_review_url = third["url"]
@@ -477,7 +594,7 @@ async def back_to_menu(callback: types.CallbackQuery):
     await start_handler(callback.message)
 
 
-# === Відгуки (старий FSM залишаємо, раптом стане в пригоді) ===
+# === Відгуки через FSM (залишили, якщо захочеш збирати внутрішні фідбеки) ===
 @dp.callback_query(F.data == "leave_feedback")
 async def handle_leave_feedback(callback: types.CallbackQuery):
     user_feedback_state[callback.from_user.id] = True
@@ -505,7 +622,7 @@ async def collect_feedback(message: Message):
         pass
 
 
-# --- Розділ «Відгуки» ---
+# --- Розділ «Відгуки» (залишили, якщо юзер вручну напише «Відгуки») ---
 @dp.message(F.text == "Відгуки")
 async def reviews(message: Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -522,6 +639,7 @@ async def reviews(message: Message):
     )
 
 
+# --- Хендлер підтримки (зараз не використовується як кнопка в меню, але може знадобитись) ---
 @dp.message(F.text == "Підтримати проєкт \"Одеса Навмання\"")
 async def donate_handler(message: Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
