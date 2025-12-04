@@ -31,22 +31,26 @@ USERS_FILE = "users.json"
 VISITED_FILE = "visited.json"
 
 # Google Maps review links
-REVIEWS_MAIN_LINK = "https://share.google/iUAPUiXnjQ0uOOhzk"   # якщо захочеш повернути кнопку «Відгуки»
+REVIEWS_MAIN_LINK = "https://share.google/iUAPUiXnjQ0uOOhzk"   # «Відгуки» (якщо знадобиться)
 REVIEWS_BOT_LINK = "https://g.page/r/CYKKZ6sJyKz0EAE/review"   # «Залишити відгук про цей БОТ»
+
+# Створюємо visited.json, якщо його ще немає
+if not os.path.exists(VISITED_FILE):
+    with open(VISITED_FILE, "w", encoding="utf-8") as f:
+        json.dump({}, f)
 
 # --- Ініціалізація бота і диспетчера ---
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
 # --- Словники станів ---
-user_booking_state: dict[int, str] = {}
 user_feedback_state: dict[int, bool] = {}
 # mode: "random" | "firm"
 user_route_state: dict[int, dict] = {}
 
 
 # --- Утиліти для роботи з users.json ---
-def save_user(user_id: int):
+def save_user(user_id: int) -> None:
     """Додає user_id в users.json, якщо його там ще немає."""
     try:
         with open(USERS_FILE, "r", encoding="utf-8") as f:
@@ -70,6 +74,7 @@ def load_all_users() -> list[int]:
     return users
 
 
+# --- Утиліти для роботи з visited.json ---
 def load_visited(user_id: int) -> set[str]:
     """
     Повертає множину place_id, які вже показували цьому користувачу.
@@ -84,7 +89,7 @@ def load_visited(user_id: int) -> set[str]:
     return set(ids)
 
 
-def add_visited(user_id: int, place_ids: list[str]):
+def add_visited(user_id: int, place_ids: list[str]) -> None:
     """
     Додає нові place_id до visited.json для користувача.
     """
@@ -111,6 +116,19 @@ def add_visited(user_id: int, place_ids: list[str]):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+def load_visited_all() -> dict[str, list[str]]:
+    """
+    Повертає весь словник {user_id: [place_id, ...]} з visited.json.
+    Використається для статистики та адмін-команд.
+    """
+    try:
+        with open(VISITED_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        data = {}
+    return data
+
+
 def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """
     Повертає відстань між двома точками (lat/lon) в метрах.
@@ -128,7 +146,7 @@ def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 # --- Стартове меню ---
 @dp.message(F.text == "/start")
-async def start_handler(message: Message):
+async def start_handler(message: Message) -> None:
     save_user(message.from_user.id)
 
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[
@@ -147,7 +165,7 @@ async def start_handler(message: Message):
 
 # --- «Як працює бот?» ---
 @dp.message(F.text == "ℹ️ Як працює бот?")
-async def how_bot_works(message: Message):
+async def how_bot_works(message: Message) -> None:
     await message.answer(
         "<b>Як працює «Одеса Навмання»?</b>\n\n"
         "1️⃣ Обираєш режим: випадкове місце або прогулянка.\n"
@@ -159,14 +177,16 @@ async def how_bot_works(message: Message):
 
 # --- Випадкова рекомендація (одна точка) ---
 @dp.message(F.text == "🎲 Випадкова рекомендація")
-async def random_recommendation(message: Message):
+async def random_recommendation(message: Message) -> None:
     await message.answer("🔍 Шукаю для тебе цікаве місце в Одесі…")
 
     user_id = message.from_user.id
     visited = load_visited(user_id)
+
     places = get_random_places(1, excluded_ids=visited)
     if not places:
-        return await message.reply("Не вдалося знайти локацію 😞 Спробуй ще раз трохи пізніше.")
+        await message.reply("Не вдалося знайти локацію 😞 Спробуй ще раз трохи пізніше.")
+        return
 
     p = places[0]
 
@@ -205,7 +225,7 @@ async def random_recommendation(message: Message):
 
 # --- Меню «Вирушити на прогулянку» ---
 @dp.message(F.text == "🚶‍♂️ Вирушити на прогулянку")
-async def walk_menu(message: Message):
+async def walk_menu(message: Message) -> None:
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[
         [KeyboardButton(text="🎯 Рандом з 3 локацій")],
         [KeyboardButton(text="🎯 Рандом з 5 локацій")],
@@ -224,13 +244,13 @@ async def walk_menu(message: Message):
 
 
 @dp.message(F.text == "⬅ Назад")
-async def go_back(message: Message):
+async def go_back(message: Message) -> None:
     await start_handler(message)
 
 
 # --- Рандомні маршрути (3/5/10 точок) ---
 @dp.message(F.text.startswith("🎯 Рандом з"))
-async def route_handler(message: Message):
+async def route_handler(message: Message) -> None:
     count = 3 if "3" in message.text else 5 if "5" in message.text else 10
 
     user_route_state[message.from_user.id] = {
@@ -260,14 +280,21 @@ async def send_route(
     count: int,
     start_lat: float | None = None,
     start_lon: float | None = None,
-):
+) -> None:
     await message.answer("🔄 Шукаю цікаві місця на мапі…")
 
     user_id = message.from_user.id
     visited = load_visited(user_id)
-    places = get_random_places(count, start_lat=start_lat, start_lon=start_lon, excluded_ids=visited)
+
+    places = get_random_places(
+        count,
+        start_lat=start_lat,
+        start_lon=start_lon,
+        excluded_ids=visited,
+    )
     if not places:
-        return await message.reply("Не вдалося знайти локації 😞")
+        await message.reply("Не вдалося знайти локації 😞")
+        return
 
     for i, p in enumerate(places, 1):
         caption = f"<b>{i}. {p['name']}</b>\n"
@@ -316,12 +343,13 @@ async def send_route(
 
 # --- Вибір старту: центр / поточне місце (для рандомних і фірмового маршруту) ---
 @dp.message(F.text.startswith("🏙 Почнемо в центрі Одеси"))
-async def start_from_center(message: Message):
+async def start_from_center(message: Message) -> None:
     data = user_route_state.pop(message.from_user.id, None)
     if not data:
-        return await message.answer(
+        await message.answer(
             "Спочатку обери тип маршруту в меню «Вирушити на прогулянку»."
         )
+        return
 
     mode = data.get("mode", "random")
 
@@ -335,12 +363,13 @@ async def start_from_center(message: Message):
 
 
 @dp.message(F.text.startswith("📍 Почнемо там де ви зараз"))
-async def start_from_user_location(message: Message):
+async def start_from_user_location(message: Message) -> None:
     data = user_route_state.get(message.from_user.id)
     if not data:
-        return await message.answer(
+        await message.answer(
             "Спочатку обери тип маршруту в меню «Вирушити на прогулянку»."
         )
+        return
 
     user_route_state[message.from_user.id]["status"] = "waiting_location"
 
@@ -360,9 +389,10 @@ async def start_from_user_location(message: Message):
 
 
 @dp.message(F.location)
-async def handle_location(message: Message):
+async def handle_location(message: Message) -> None:
     data = user_route_state.pop(message.from_user.id, None)
     if not data or data.get("status") != "waiting_location":
+        # геолокація не в контексті вибору маршруту
         return
 
     lat = message.location.latitude
@@ -400,7 +430,7 @@ async def handle_location(message: Message):
 
 # === ФІРМОВИЙ МАРШРУТ: вибір старту ===
 @dp.message(F.text == "🌟 Фірмовий маршрут")
-async def firmovyi_marshrut_start(message: Message):
+async def firmovyi_marshrut_start(message: Message) -> None:
     user_route_state[message.from_user.id] = {
         "mode": "firm",
         "status": "choose_start",
@@ -431,7 +461,7 @@ async def start_firm_route(
     message: Message,
     start_lat: float | None = None,
     start_lon: float | None = None,
-):
+) -> None:
     """Старт фірмового маршруту від вказаних координат (або від центру, якщо None)."""
     await message.answer("🔄 Створюю фірмовий маршрут з 3 точок…")
 
@@ -481,7 +511,7 @@ async def start_firm_route(
 
 
 @dp.callback_query(F.data.startswith("firm_to_gps:"))
-async def firm_to_gps_step(callback: types.CallbackQuery):
+async def firm_to_gps_step(callback: types.CallbackQuery) -> None:
     _, lat_str, lon_str = callback.data.split(":")
     lat_first, lon_first = float(lat_str), float(lon_str)
 
@@ -524,7 +554,7 @@ async def firm_to_gps_step(callback: types.CallbackQuery):
 
 
 @dp.callback_query(F.data.startswith("firm_to_food:"))
-async def firm_to_food_place(callback: types.CallbackQuery):
+async def firm_to_food_place(callback: types.CallbackQuery) -> None:
     _, lat_str, lon_str = callback.data.split(":")
     lat_prev, lon_prev = float(lat_str), float(lon_str)
 
@@ -571,7 +601,7 @@ async def firm_to_food_place(callback: types.CallbackQuery):
 
 
 @dp.callback_query(F.data == "firm_show_budget")
-async def firm_show_budget(callback: types.CallbackQuery):
+async def firm_show_budget(callback: types.CallbackQuery) -> None:
     await callback.answer()
 
     budget = random.choice([
@@ -589,14 +619,14 @@ async def firm_show_budget(callback: types.CallbackQuery):
 
 
 @dp.callback_query(F.data == "back_to_menu")
-async def back_to_menu(callback: types.CallbackQuery):
+async def back_to_menu(callback: types.CallbackQuery) -> None:
     await callback.answer()
     await start_handler(callback.message)
 
 
-# === Відгуки через FSM (залишили, якщо захочеш збирати внутрішні фідбеки) ===
+# === Відгуки через FSM (внутрішні, до адміна) ===
 @dp.callback_query(F.data == "leave_feedback")
-async def handle_leave_feedback(callback: types.CallbackQuery):
+async def handle_leave_feedback(callback: types.CallbackQuery) -> None:
     user_feedback_state[callback.from_user.id] = True
     await callback.answer()
     await callback.message.answer(
@@ -605,8 +635,8 @@ async def handle_leave_feedback(callback: types.CallbackQuery):
     )
 
 
-@dp.message(F.text & (F.text != "/start"))
-async def collect_feedback(message: Message):
+@dp.message(F.text & (F.text != "/start") & ~F.text.startswith("/"))
+async def collect_feedback(message: Message) -> None:
     if user_feedback_state.get(message.from_user.id):
         user_feedback_state[message.from_user.id] = False
 
@@ -622,9 +652,9 @@ async def collect_feedback(message: Message):
         pass
 
 
-# --- Розділ «Відгуки» (залишили, якщо юзер вручну напише «Відгуки») ---
+# --- Розділ «Відгуки» (на Google Maps, якщо юзер напише «Відгуки») ---
 @dp.message(F.text == "Відгуки")
-async def reviews(message: Message):
+async def reviews(message: Message) -> None:
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="⭐ Переглянути та залишити відгук на Google Maps",
@@ -639,9 +669,9 @@ async def reviews(message: Message):
     )
 
 
-# --- Хендлер підтримки (зараз не використовується як кнопка в меню, але може знадобитись) ---
+# --- Підтримати проєкт (якщо колись повернеш у меню) ---
 @dp.message(F.text == "Підтримати проєкт \"Одеса Навмання\"")
-async def donate_handler(message: Message):
+async def donate_handler(message: Message) -> None:
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)],
         [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
@@ -654,8 +684,92 @@ async def donate_handler(message: Message):
     )
 
 
+# --- Адмінські утиліти для visited.json ---
+@dp.message(F.text == "/reset_visited")
+async def admin_reset_visited(message: Message) -> None:
+    if message.from_user.id != MY_ID:
+        return  # тільки адмін
+
+    try:
+        with open(VISITED_FILE, "w", encoding="utf-8") as f:
+            json.dump({}, f, ensure_ascii=False, indent=2)
+        await message.answer("🔄 Історію відвіданих місць для всіх користувачів очищено.")
+    except Exception as e:
+        await message.answer(f"❌ Помилка при очищенні: {e}")
+
+
+@dp.message(F.text.startswith("/reset_user"))
+async def admin_reset_user(message: Message) -> None:
+    if message.from_user.id != MY_ID:
+        return
+
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Використання: /reset_user <user_id>")
+        return
+
+    target_id_str = parts[1].strip()
+    if not target_id_str.isdigit():
+        await message.answer("user_id має бути числом.")
+        return
+
+    data = load_visited_all()
+    if target_id_str in data:
+        del data[target_id_str]
+        with open(VISITED_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        await message.answer(f"🔄 Історію відвіданих місць для користувача {target_id_str} очищено.")
+    else:
+        await message.answer("У цього користувача ще немає збережених локацій.")
+
+
+@dp.message(F.text == "/reset_me")
+async def reset_me(message: Message) -> None:
+    # Можна дозволити тільки адмінам; якщо хочеш дозволити всім — прибери перевірку
+    if message.from_user.id != MY_ID:
+        return
+
+    uid_str = str(message.from_user.id)
+    data = load_visited_all()
+    if uid_str in data:
+        del data[uid_str]
+        with open(VISITED_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        await message.answer("🔄 Твою історію відвіданих місць очищено.")
+    else:
+        await message.answer("У тебе поки немає збережених локацій.")
+
+
+@dp.message(F.text == "/stats_visited")
+async def admin_stats_visited(message: Message) -> None:
+    if message.from_user.id != MY_ID:
+        return
+
+    data = load_visited_all()
+    if not data:
+        await message.answer("Поки що немає жодних відвіданих локацій.")
+        return
+
+    lines = ["📊 Статистика відвіданих локацій:\n"]
+    for uid_str, places in data.items():
+        uid = int(uid_str)
+        count = len(places)
+        try:
+            chat = await bot.get_chat(uid)
+            username = chat.username or ""
+            fullname = " ".join(filter(None, [chat.first_name, chat.last_name]))
+            label = f"@{username}" if username else fullname or uid_str
+        except Exception:
+            label = uid_str
+
+        lines.append(f"• {label} (id {uid_str}) — {count} локацій")
+
+    text = "\n".join(lines)
+    await message.answer(text)
+
+
 # --- Адмінська розсилка ---
-async def broadcast_to_all(text: str):
+async def broadcast_to_all(text: str) -> None:
     users = load_all_users()
     if not users:
         await bot.send_message(MY_ID, "В базі поки немає користувачів для розсилки.")
@@ -677,18 +791,19 @@ async def broadcast_to_all(text: str):
 
 
 @dp.message(F.text.startswith("/broadcast"))
-async def admin_broadcast(message: Message):
+async def admin_broadcast(message: Message) -> None:
     if message.from_user.id != MY_ID:
         return
     parts = message.text.split(" ", 1)
     if len(parts) < 2 or not parts[1].strip():
-        return await message.answer("Використання: /broadcast <текст повідомлення>")
+        await message.answer("Використання: /broadcast <текст повідомлення>")
+        return
     await message.answer("Розсилаю…")
     await broadcast_to_all(parts[1])
     await message.answer("✅ Розсилка завершена.")
 
 
-async def main():
+async def main() -> None:
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
