@@ -6,6 +6,7 @@ import random
 from math import radians, sin, cos, asin, sqrt
 from datetime import datetime
 
+import pytz
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton,
@@ -49,15 +50,20 @@ DAILY_RECS_LIMIT = 5    # випадкові рекомендації на до�
 REVIEWS_MAIN_LINK = "https://share.google/iUAPUiXnjQ0uOOhzk"   # загальна сторінка відгуків
 REVIEWS_BOT_LINK = "https://g.page/r/CYKKZ6sJyKz0EAE/review"   # відгук саме про бот
 
-# Створюємо visited.json, якщо його ще немає
+ODESSA_TZ = pytz.timezone("Europe/Kyiv")
+
+# Створюємо файли, якщо їх ще немає
 if not os.path.exists(VISITED_FILE):
     with open(VISITED_FILE, "w", encoding="utf-8") as f:
         json.dump({}, f)
-        
-# Створюємо limits.json, якщо його ще немає
+
 if not os.path.exists(LIMITS_FILE):
     with open(LIMITS_FILE, "w", encoding="utf-8") as f:
         json.dump({}, f)
+
+if not os.path.exists(USERS_FILE):
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump([], f)
 
 # --- Ініціалізація бота і диспетчера ---
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -127,8 +133,7 @@ def add_visited(user_id: int, place_ids: list[str]) -> None:
         if pid:
             cur.add(pid)
 
-    # за бажанням можна обмежити історію, наприклад останні 500
-    trimmed = list(cur)[-500:]
+    trimmed = list(cur)[-500:]  # обмеження історії
 
     data[str(user_id)] = trimmed
 
@@ -149,9 +154,57 @@ def load_visited_all() -> dict[str, list[str]]:
     return data
 
 
-from datetime import datetime
-import pytz
-ODESSA_TZ = pytz.timezone("Europe/Kyiv")
+# --- Ліміти використання ---
+def _today_str() -> str:
+    """
+    Поточна дата за одеським часом (Europe/Kyiv).
+    """
+    now = datetime.now(ODESSA_TZ)
+    return now.strftime("%Y-%m-%d")
+
+
+def load_limits() -> dict:
+    try:
+        with open(LIMITS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        data = {}
+    return data
+
+
+def save_limits(data: dict) -> None:
+    with open(LIMITS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def can_use_limit(user_id: int, key: str, limit: int) -> bool:
+    """
+    key: "walks" або "recs"
+    """
+    # Адмін без обмежень
+    if user_id == MY_ID:
+        return True
+
+    data = load_limits()
+    today = _today_str()
+    user_data = data.get(today, {}).get(str(user_id), {})
+    return user_data.get(key, 0) < limit
+
+
+def inc_limit(user_id: int, key: str) -> None:
+    """
+    Збільшує лічильник key ("walks" / "recs") для користувача на сьогодні.
+    """
+    if user_id == MY_ID:
+        return
+
+    data = load_limits()
+    today = _today_str()
+    day_data = data.setdefault(today, {})
+    uid = str(user_id)
+    user_data = day_data.setdefault(uid, {})
+    user_data[key] = user_data.get(key, 0) + 1
+    save_limits(data)
 
 
 def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -167,14 +220,6 @@ def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     a = sin(dphi / 2) ** 2 + cos(phi1) * cos(phi2) * sin(dlambda / 2) ** 2
     c = 2 * asin(sqrt(a))
     return R * c
-
-
-def _today_str() -> str:
-    """
-    Повертає дату за одеським часом для підрахунку добових лімітів.
-    """
-    now = datetime.now(ODESSA_TZ)
-    return now.strftime("%Y-%m-%d")
 
 
 # --- Стартове меню ---
@@ -225,8 +270,6 @@ async def random_recommendation(message: Message) -> None:
 
     visited = load_visited(user_id)
     places = get_random_places(1, excluded_ids=visited)
-    ...
-
     if not places:
         await message.reply("Не вдалося знайти локацію 😞 Спробуй ще раз трохи пізніше.")
         return
@@ -258,13 +301,14 @@ async def random_recommendation(message: Message) -> None:
     if p.get("place_id"):
         add_visited(user_id, [p["place_id"]])
 
+    # Фіксуємо використання рекомендації
+    inc_limit(user_id, "recs")
+
     btns = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)],
         [InlineKeyboardButton(text="✍️ Залишити відгук про цей БОТ", url=REVIEWS_BOT_LINK)],
         [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
     ])
-        # Фіксуємо використання рекомендації
-    inc_limit(user_id, "recs")
     await message.answer("Як тобі рекомендація? 😉", reply_markup=btns)
 
 
@@ -319,6 +363,7 @@ async def route_handler(message: Message) -> None:
         reply_markup=kb
     )
 
+
 async def send_route(
     message: Message,
     count: int,
@@ -344,11 +389,10 @@ async def send_route(
         start_lon=start_lon,
         excluded_ids=visited,
     )
-
     if not places:
         await message.reply("Не вдалося знайти локації 😞")
         return
-    
+
     for i, p in enumerate(places, 1):
         caption = f"<b>{i}. {p['name']}</b>\n"
         if p.get("rating"):
@@ -481,6 +525,7 @@ async def handle_location(message: Message) -> None:
         await start_firm_route(message, start_lat=lat, start_lon=lon)
     else:
         await message.answer("Щось пішло не так. Спробуй ще раз обрати маршрут.")
+
 
 # === ФІРМОВИЙ МАРШРУТ: вибір старту ===
 @dp.message(F.text == "🌟 Фірмовий маршрут")
@@ -694,6 +739,7 @@ async def back_to_menu(callback: types.CallbackQuery) -> None:
     await callback.answer()
     await start_handler(callback.message)
 
+
 # === Відгуки через FSM (внутрішні, до адміна) ===
 @dp.callback_query(F.data == "leave_feedback")
 async def handle_leave_feedback(callback: types.CallbackQuery) -> None:
@@ -755,7 +801,7 @@ async def donate_handler(message: Message) -> None:
     )
 
 
-# --- Адмінські утиліти для visited.json ---
+# --- Адмінські утиліти для visited.json та limits.json ---
 @dp.message(F.text == "/reset_visited")
 async def admin_reset_visited(message: Message) -> None:
     if message.from_user.id != MY_ID:
@@ -767,6 +813,21 @@ async def admin_reset_visited(message: Message) -> None:
         await message.answer("🔄 Історію відвіданих місць для всіх користувачів очищено.")
     except Exception as e:
         await message.answer(f"❌ Помилка при очищенні: {e}")
+
+
+@dp.message(F.text == "/reset_limits")
+async def admin_reset_limits(message: Message) -> None:
+    if message.from_user.id != MY_ID:
+        return  # тільки адмін
+
+    try:
+        with open(LIMITS_FILE, "w", encoding="utf-8") as f:
+            json.dump({}, f, ensure_ascii=False, indent=2)
+
+        await message.answer("🔄 Ліміти за добу успішно очищено.\n"
+                             "Всі користувачі можуть починати день з нуля ✔️")
+    except Exception as e:
+        await message.answer(f"❌ Помилка при очищенні limits.json: {e}")
 
 
 @dp.message(F.text.startswith("/reset_user"))
@@ -906,12 +967,14 @@ async def export_visited_to_gsheet(message: Message) -> None:
             rows.append([uid_str, user_label, pid, maps_link])
 
     try:
-        ws.append_rows(rows)
+        ws.update("A1", rows)
     except Exception as e:
         await message.answer(f"❌ Не вдалося записати дані в таблицю: {e}")
         return
 
-    await message.answer(f"✅ Вигрузив {len(rows) - 1} записів у Google Sheets (лист 'visited').")
+    await message.answer(
+        f"✅ Вигрузив {len(rows) - 1} записів у Google Sheets (лист 'visited')."
+    )
 
 
 @dp.message(F.text == "/export_visited_to_sheet")
