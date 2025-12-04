@@ -22,6 +22,10 @@ MY_ID = int(os.getenv("MY_ID", "909231739"))
 PUMB_URL = "https://mobile-app.pumb.ua/VDdaNY9UzYmaK4fj8"
 USERS_FILE = "users.json"
 
+# Google Maps review links
+REVIEWS_MAIN_LINK = "https://share.google/iUAPUiXnjQ0uOOhzk"   # кнопка «Відгуки» в меню
+REVIEWS_BOT_LINK = "https://g.page/r/CYKKZ6sJyKz0EAE/review"   # «Залишити відгук про цей БОТ»
+
 # --- Ініціалізація бота і диспетчера ---
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
@@ -105,8 +109,15 @@ async def random_recommendation(message: Message):
         caption += f"⭐ {p['rating']} ({p.get('reviews', 0)} відгуків)\n"
     caption += p.get("address", "")
 
+    # Лінк на відгуки по цьому місцю
+    if p.get("place_id"):
+        place_review_url = f"https://search.google.com/local/writereview?placeid={p['place_id']}"
+    else:
+        place_review_url = p["url"]
+
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🗺 Відкрити на мапі", url=p["url"])]
+        [InlineKeyboardButton(text="🗺 Відкрити на мапі", url=p["url"])],
+        [InlineKeyboardButton(text="⭐ Залишити відгук по цьому місцю", url=place_review_url)],
     ])
 
     if p.get("photo"):
@@ -116,7 +127,8 @@ async def random_recommendation(message: Message):
 
     btns = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)],
-        [InlineKeyboardButton(text="✍️ Залишити відгук", callback_data="leave_feedback")]
+        [InlineKeyboardButton(text="✍️ Залишити відгук про цей БОТ", url=REVIEWS_BOT_LINK)],
+        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
     ])
     await message.answer("Як тобі рекомендація? 😉", reply_markup=btns)
 
@@ -189,8 +201,15 @@ async def send_route(
         if p.get("rating"):
             caption += f"⭐ {p['rating']} ({p.get('reviews', 0)} відгуків)\n"
         caption += p.get("address", "")
+
+        if p.get("place_id"):
+            place_review_url = f"https://search.google.com/local/writereview?placeid={p['place_id']}"
+        else:
+            place_review_url = p["url"]
+
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🗺 Відкрити на мапі", url=p["url"])]
+            [InlineKeyboardButton(text="🗺 Відкрити на мапі", url=p["url"])],
+            [InlineKeyboardButton(text="⭐ Залишити відгук по цьому місцю", url=place_review_url)],
         ])
         if p.get("photo"):
             await message.answer_photo(photo=p["photo"], caption=caption, reply_markup=kb)
@@ -212,7 +231,8 @@ async def send_route(
 
     btns = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)],
-        [InlineKeyboardButton(text="✍️ Залишити відгук", callback_data="leave_feedback")]
+        [InlineKeyboardButton(text="✍️ Залишити відгук про цей БОТ", url=REVIEWS_BOT_LINK)],
+        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
     ])
     await message.answer("Що скажеш після прогулянки?", reply_markup=btns)
 
@@ -329,11 +349,17 @@ async def start_firm_route(
 
     first = first_list[0]
 
+    if first.get("place_id"):
+        first_review_url = f"https://search.google.com/local/writereview?placeid={first['place_id']}"
+    else:
+        first_review_url = first["url"]
+
     kb1 = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="➡️ Далі — GPS-рандом",
             callback_data=f"firm_to_gps:{first['lat']}:{first['lon']}"
         )],
+        [InlineKeyboardButton(text="⭐ Залишити відгук по цьому місцю", url=first_review_url)],
         [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
     ])
 
@@ -364,11 +390,17 @@ async def firm_to_gps_step(callback: types.CallbackQuery):
         await callback.message.answer("Не вдалося знайти другу точку 😞")
         return
 
+    if second.get("place_id"):
+        second_review_url = f"https://search.google.com/local/writereview?placeid={second['place_id']}"
+    else:
+        second_review_url = second["url"]
+
     kb2 = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="➡️ Далі — гастроточка",
             callback_data=f"firm_to_food:{second['lat']}:{second['lon']}"
         )],
+        [InlineKeyboardButton(text="⭐ Залишити відгук по цьому місцю", url=second_review_url)],
         [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
     ])
 
@@ -399,8 +431,14 @@ async def firm_to_food_place(callback: types.CallbackQuery):
         await callback.message.answer("Не вдалося знайти гастроточку 😞")
         return
 
+    if third.get("place_id"):
+        third_review_url = f"https://search.google.com/local/writereview?placeid={third['place_id']}"
+    else:
+        third_review_url = third["url"]
+
     kb3 = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎲 Показати бюджет", callback_data="firm_show_budget")],
+        [InlineKeyboardButton(text="⭐ Залишити відгук по цьому місцю", url=third_review_url)],
         [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
     ])
 
@@ -427,6 +465,8 @@ async def firm_show_budget(callback: types.CallbackQuery):
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
+        [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)],
+        [InlineKeyboardButton(text="✍️ Залишити відгук про цей БОТ", url=REVIEWS_BOT_LINK)],
     ])
 
     await callback.message.answer(f"🎯 Бюджет: <b>{budget}</b>", reply_markup=kb)
@@ -438,7 +478,7 @@ async def back_to_menu(callback: types.CallbackQuery):
     await start_handler(callback.message)
 
 
-# === Відгуки ===
+# === Відгуки (старий FSM залишаємо, раптом стане в пригоді) ===
 @dp.callback_query(F.data == "leave_feedback")
 async def handle_leave_feedback(callback: types.CallbackQuery):
     user_feedback_state[callback.from_user.id] = True
@@ -469,17 +509,25 @@ async def collect_feedback(message: Message):
 # --- Розділ «Відгуки» ---
 @dp.message(F.text == "Відгуки")
 async def reviews(message: Message):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="⭐ Переглянути та залишити відгук на Google Maps",
+            url=REVIEWS_MAIN_LINK
+        )],
+        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
+    ])
+
     await message.answer(
-        "🔹 «Кайф! Дуже атмосферно»\n"
-        "🔹 «Думав, що знаю Одесу — але бот здивував»\n"
-        "🔹 «Брали маршрут втрьох — було круто!»"
+        "Тут ти можеш переглянути відгуки та залишити свій про «Одеса Навмання» 💛",
+        reply_markup=kb
     )
 
 
 @dp.message(F.text == "Підтримати проєкт \"Одеса Навмання\"")
 async def donate_handler(message: Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)]
+        [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)],
+        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
     ])
 
     await message.answer(
