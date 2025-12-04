@@ -22,17 +22,27 @@ from places import (
     CENTER_LON,
 )
 
+# --- Google Sheets інтеграція (gspread) ---
+try:
+    import gspread
+    from google.oauth2.service_account import Credentials
+    GSHEETS_AVAILABLE = True
+except ImportError:
+    GSHEETS_AVAILABLE = False
+
+
 # --- Налаштування ---
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 MY_ID = int(os.getenv("MY_ID", "909231739"))
+
 PUMB_URL = "https://mobile-app.pumb.ua/VDdaNY9UzYmaK4fj8"
 USERS_FILE = "users.json"
 VISITED_FILE = "visited.json"
 
 # Google Maps review links
-REVIEWS_MAIN_LINK = "https://share.google/iUAPUiXnjQ0uOOhzk"   # «Відгуки» (якщо знадобиться)
-REVIEWS_BOT_LINK = "https://g.page/r/CYKKZ6sJyKz0EAE/review"   # «Залишити відгук про цей БОТ»
+REVIEWS_MAIN_LINK = "https://share.google/iUAPUiXnjQ0uOOhzk"   # загальна сторінка відгуків
+REVIEWS_BOT_LINK = "https://g.page/r/CYKKZ6sJyKz0EAE/review"   # відгук саме про бот
 
 # Створюємо visited.json, якщо його ще немає
 if not os.path.exists(VISITED_FILE):
@@ -142,7 +152,6 @@ def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     a = sin(dphi / 2) ** 2 + cos(phi1) * cos(phi2) * sin(dlambda / 2) ** 2
     c = 2 * asin(sqrt(a))
     return R * c
-
 
 # --- Стартове меню ---
 @dp.message(F.text == "/start")
@@ -427,7 +436,6 @@ async def handle_location(message: Message) -> None:
     else:
         await message.answer("Щось пішло не так. Спробуй ще раз обрати маршрут.")
 
-
 # === ФІРМОВИЙ МАРШРУТ: вибір старту ===
 @dp.message(F.text == "🌟 Фірмовий маршрут")
 async def firmovyi_marshrut_start(message: Message) -> None:
@@ -465,7 +473,12 @@ async def start_firm_route(
     """Старт фірмового маршруту від вказаних координат (або від центру, якщо None)."""
     await message.answer("🔄 Створюю фірмовий маршрут з 3 точок…")
 
-    hist_types = ["museum", "art_gallery", "library", "church", "synagogue", "park", "tourist_attraction"]
+    # історичні/атмосферні типи місць
+    hist_types = [
+        "museum", "art_gallery", "library",
+        "church", "synagogue", "park",
+        "tourist_attraction"
+    ]
 
     user_id = message.from_user.id
     visited = load_visited(user_id)
@@ -483,6 +496,7 @@ async def start_firm_route(
 
     first = first_list[0]
 
+    # зберігаємо як відвідане
     if first.get("place_id"):
         add_visited(user_id, [first["place_id"]])
         first_review_url = f"https://search.google.com/local/writereview?placeid={first['place_id']}"
@@ -623,7 +637,6 @@ async def back_to_menu(callback: types.CallbackQuery) -> None:
     await callback.answer()
     await start_handler(callback.message)
 
-
 # === Відгуки через FSM (внутрішні, до адміна) ===
 @dp.callback_query(F.data == "leave_feedback")
 async def handle_leave_feedback(callback: types.CallbackQuery) -> None:
@@ -637,6 +650,7 @@ async def handle_leave_feedback(callback: types.CallbackQuery) -> None:
 
 @dp.message(F.text & (F.text != "/start") & ~F.text.startswith("/"))
 async def collect_feedback(message: Message) -> None:
+    # якщо юзер у стані «залишити відгук» — шлемо його тобі
     if user_feedback_state.get(message.from_user.id):
         user_feedback_state[message.from_user.id] = False
 
@@ -652,7 +666,7 @@ async def collect_feedback(message: Message) -> None:
         pass
 
 
-# --- Розділ «Відгуки» (на Google Maps, якщо юзер напише «Відгуки») ---
+# --- Розділ «Відгуки» (якщо юзер вручну напише «Відгуки») ---
 @dp.message(F.text == "Відгуки")
 async def reviews(message: Message) -> None:
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -669,7 +683,7 @@ async def reviews(message: Message) -> None:
     )
 
 
-# --- Підтримати проєкт (якщо колись повернеш у меню) ---
+# --- Підтримати проєкт (якщо колись повернеш кнопку в меню) ---
 @dp.message(F.text == "Підтримати проєкт \"Одеса Навмання\"")
 async def donate_handler(message: Message) -> None:
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -725,7 +739,7 @@ async def admin_reset_user(message: Message) -> None:
 
 @dp.message(F.text == "/reset_me")
 async def reset_me(message: Message) -> None:
-    # Можна дозволити тільки адмінам; якщо хочеш дозволити всім — прибери перевірку
+    # Зараз доступно тільки тобі; якщо хочеш дозволити всім — прибери перевірку
     if message.from_user.id != MY_ID:
         return
 
@@ -768,6 +782,89 @@ async def admin_stats_visited(message: Message) -> None:
     await message.answer(text)
 
 
+# --- Експорт visited.json у Google Sheets ---
+async def export_visited_to_gsheet(message: Message) -> None:
+    """
+    Експортує visited.json у Google Sheets:
+    колонки: user_id, user_label, place_id, maps_link.
+    """
+    if not GSHEETS_AVAILABLE:
+        await message.answer(
+            "⚠️ gspread не встановлено. Додай 'gspread' і 'google-auth' у requirements.txt."
+        )
+        return
+
+    creds_json = os.getenv("GSPREAD_CREDENTIALS_JSON")
+    sheet_id = os.getenv("GSPREAD_SPREADSHEET_ID")
+
+    if not creds_json or not sheet_id:
+        await message.answer("⚠️ Не налаштовані GSPREAD_CREDENTIALS_JSON або GSPREAD_SPREADSHEET_ID.")
+        return
+
+    # Парсимо JSON із змінної середовища
+    try:
+        creds_dict = json.loads(creds_json)
+    except json.JSONDecodeError:
+        await message.answer("❌ Не вдалося прочитати GSPREAD_CREDENTIALS_JSON (невалідний JSON).")
+        return
+
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+
+    try:
+        gc = gspread.authorize(credentials)
+        sh = gc.open_by_key(sheet_id)
+    except Exception as e:
+        await message.answer(f"❌ Не вдалося підключитися до Google Sheets: {e}")
+        return
+
+    # Працюємо з аркушем "visited"
+    try:
+        ws = sh.worksheet("visited")
+        ws.clear()
+    except gspread.WorksheetNotFound:
+        ws = sh.add_worksheet(title="visited", rows="1000", cols="10")
+
+    data = load_visited_all()
+    if not data:
+        await message.answer("У visited.json поки немає даних.")
+        return
+
+    # Заголовки
+    rows = [["user_id", "user_label", "place_id", "maps_link"]]
+
+    for uid_str, places in data.items():
+        uid = int(uid_str)
+        # Підпис користувача
+        try:
+            chat = await bot.get_chat(uid)
+            username = chat.username or ""
+            fullname = " ".join(filter(None, [chat.first_name, chat.last_name]))
+            user_label = f"@{username}" if username else fullname or uid_str
+        except Exception:
+            user_label = uid_str
+
+        for pid in places:
+            maps_link = f"https://www.google.com/maps/search/?api=1&query_place_id={pid}"
+            rows.append([uid_str, user_label, pid, maps_link])
+
+    try:
+        ws.append_rows(rows)
+    except Exception as e:
+        await message.answer(f"❌ Не вдалося записати дані в таблицю: {e}")
+        return
+
+    await message.answer(f"✅ Вигрузив {len(rows) - 1} записів у Google Sheets (лист 'visited').")
+
+
+@dp.message(F.text == "/export_visited_to_sheet")
+async def export_visited_cmd(message: Message) -> None:
+    if message.from_user.id != MY_ID:
+        return
+    await message.answer("📤 Експортую дані у Google Sheets…")
+    await export_visited_to_gsheet(message)
+
+
 # --- Адмінська розсилка ---
 async def broadcast_to_all(text: str) -> None:
     users = load_all_users()
@@ -803,6 +900,7 @@ async def admin_broadcast(message: Message) -> None:
     await message.answer("✅ Розсилка завершена.")
 
 
+# --- Точка входу ---
 async def main() -> None:
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
