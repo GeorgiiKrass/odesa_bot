@@ -845,7 +845,7 @@ async def export_visited_to_gsheet(message: Message) -> None:
             user_label = uid_str
 
         for pid in places:
-            maps_link = f"https://www.google.com/maps/search/?api=1&query_place_id={pid}"
+            maps_link = f"https://www.google.com/maps/place/?q=place_id:{pid}"
             rows.append([uid_str, user_label, pid, maps_link])
 
     try:
