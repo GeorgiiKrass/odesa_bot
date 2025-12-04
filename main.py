@@ -493,4 +493,4 @@ async def donate_handler(message: Message):
 async def broadcast_to_all(text: str):
     users = load_all_users()
     if not users:
-        await bot.send_message(MY_ID, "В базі поки немає користу
+        await bot.send_message(MY_ID, "В базі поки немає користувачів для розсилки.")
