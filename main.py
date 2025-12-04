@@ -70,8 +70,7 @@ async def start_handler(message: Message):
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[
         [KeyboardButton(text="🎲 Випадкова рекомендація")],
         [KeyboardButton(text="🚶‍♂️ Вирушити на прогулянку")],
-        [KeyboardButton(text="ℹ️ Як працює бот?"), KeyboardButton(text="Відгуки")],
-        [KeyboardButton(text="Підтримати проєкт \"Одеса Навмання\"")],
+        [KeyboardButton(text="ℹ️ Як працює бот?")],
     ])
     await message.answer(
         "Привіт! Я — бот <b>«Одеса Навмання»</b> 🧭\n\n"
