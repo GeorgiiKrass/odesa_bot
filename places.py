@@ -61,6 +61,7 @@ def _place_from_item(item: Dict) -> Dict:
         "reviews": item.get("user_ratings_total", 0),
         "address": item.get("vicinity", "") or item.get("formatted_address", ""),
         "photo": photo,
+        "place_id": item.get("place_id"),  # <-- додали place_id
     }
 
 
