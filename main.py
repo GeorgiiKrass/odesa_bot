@@ -49,12 +49,11 @@ DAILY_RECS_LIMIT = 5    # випадкові рекомендації на до�
 REVIEWS_MAIN_LINK = "https://share.google/iUAPUiXnjQ0uOOhzk"   # загальна сторінка відгуків
 REVIEWS_BOT_LINK = "https://g.page/r/CYKKZ6sJyKz0EAE/review"   # відгук саме про бот
 
-# Створюємо visited.json, якщо його ще немає
+# Створюємо файли, якщо їх ще немає
 if not os.path.exists(VISITED_FILE):
     with open(VISITED_FILE, "w", encoding="utf-8") as f:
         json.dump({}, f)
-        
-# Створюємо limits.json, якщо його ще немає
+
 if not os.path.exists(LIMITS_FILE):
     with open(LIMITS_FILE, "w", encoding="utf-8") as f:
         json.dump({}, f)
@@ -127,8 +126,7 @@ def add_visited(user_id: int, place_ids: list[str]) -> None:
         if pid:
             cur.add(pid)
 
-    # за бажанням можна обмежити історію, наприклад останні 500
-    trimmed = list(cur)[-500:]
+    trimmed = list(cur)[-500:]  # обмеження історії
 
     data[str(user_id)] = trimmed
 
@@ -149,10 +147,9 @@ def load_visited_all() -> dict[str, list[str]]:
     return data
 
 
-def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    # --- Ліміти використання (прогулянки/рекомендації на добу) ---
+# --- Ліміти використання ---
 def _today_str() -> str:
-    # можна UTC, щоб усе було стабільно
+    # UTC-дата, щоб усе було стабільно
     return datetime.utcnow().strftime("%Y-%m-%d")
 
 
@@ -199,6 +196,8 @@ def inc_limit(user_id: int, key: str) -> None:
     user_data[key] = user_data.get(key, 0) + 1
     save_limits(data)
 
+
+def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """
     Повертає відстань між двома точками (lat/lon) в метрах.
     Формула гаверсинуса.
@@ -211,6 +210,7 @@ def inc_limit(user_id: int, key: str) -> None:
     a = sin(dphi / 2) ** 2 + cos(phi1) * cos(phi2) * sin(dlambda / 2) ** 2
     c = 2 * asin(sqrt(a))
     return R * c
+
 
 # --- Стартове меню ---
 @dp.message(F.text == "/start")
@@ -260,8 +260,6 @@ async def random_recommendation(message: Message) -> None:
 
     visited = load_visited(user_id)
     places = get_random_places(1, excluded_ids=visited)
-    ...
-
     if not places:
         await message.reply("Не вдалося знайти локацію 😞 Спробуй ще раз трохи пізніше.")
         return
@@ -293,13 +291,14 @@ async def random_recommendation(message: Message) -> None:
     if p.get("place_id"):
         add_visited(user_id, [p["place_id"]])
 
+    # Фіксуємо використання рекомендації
+    inc_limit(user_id, "recs")
+
     btns = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)],
         [InlineKeyboardButton(text="✍️ Залишити відгук про цей БОТ", url=REVIEWS_BOT_LINK)],
         [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
     ])
-        # Фіксуємо використання рекомендації
-    inc_limit(user_id, "recs")
     await message.answer("Як тобі рекомендація? 😉", reply_markup=btns)
 
 
@@ -354,6 +353,7 @@ async def route_handler(message: Message) -> None:
         reply_markup=kb
     )
 
+
 async def send_route(
     message: Message,
     count: int,
@@ -379,11 +379,10 @@ async def send_route(
         start_lon=start_lon,
         excluded_ids=visited,
     )
-
     if not places:
         await message.reply("Не вдалося знайти локації 😞")
         return
-    
+
     for i, p in enumerate(places, 1):
         caption = f"<b>{i}. {p['name']}</b>\n"
         if p.get("rating"):
@@ -517,6 +516,7 @@ async def handle_location(message: Message) -> None:
     else:
         await message.answer("Щось пішло не так. Спробуй ще раз обрати маршрут.")
 
+
 # === ФІРМОВИЙ МАРШРУТ: вибір старту ===
 @dp.message(F.text == "🌟 Фірмовий маршрут")
 async def firmovyi_marshrut_start(message: Message) -> None:
@@ -587,18 +587,6 @@ async def start_firm_route(
 
     # Фіксуємо використання прогулянки (фірмовий маршрут теж рахуємо)
     inc_limit(user_id, "walks")
-
-        1,
-        allowed_types=hist_types,
-        start_lat=start_lat,
-        start_lon=start_lon,
-        excluded_ids=visited,
-    )
-    if not first_list:
-        await message.answer("Не вдалося знайти першу історичну точку 😞")
-        return
-
-    first = first_list[0]
 
     # зберігаємо як відвідане
     if first.get("place_id"):
@@ -740,6 +728,7 @@ async def firm_show_budget(callback: types.CallbackQuery) -> None:
 async def back_to_menu(callback: types.CallbackQuery) -> None:
     await callback.answer()
     await start_handler(callback.message)
+
 
 # === Відгуки через FSM (внутрішні, до адміна) ===
 @dp.callback_query(F.data == "leave_feedback")
@@ -953,12 +942,14 @@ async def export_visited_to_gsheet(message: Message) -> None:
             rows.append([uid_str, user_label, pid, maps_link])
 
     try:
-        ws.append_rows(rows)
+        ws.update("A1", rows)
     except Exception as e:
         await message.answer(f"❌ Не вдалося записати дані в таблицю: {e}")
         return
 
-    await message.answer(f"✅ Вигрузив {len(rows) - 1} записів у Google Sheets (лист 'visited').")
+    await message.answer(
+        f"✅ Вигрузив {len(rows) - 1} записів у Google Sheets (лист 'visited')."
+    )
 
 
 @dp.message(F.text == "/export_visited_to_sheet")
