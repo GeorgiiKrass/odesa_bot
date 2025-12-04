@@ -149,60 +149,12 @@ def load_visited_all() -> dict[str, list[str]]:
     return data
 
 
-def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    # --- Ліміти використання (прогулянки/рекомендації на добу) ---
 from datetime import datetime
 import pytz
 ODESSA_TZ = pytz.timezone("Europe/Kyiv")
 
-def _today_str() -> str:
-    now = datetime.now(ODESSA_TZ)
-    return now.strftime("%Y-%m-%d")
 
-
-def load_limits() -> dict:
-    try:
-        with open(LIMITS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        data = {}
-    return data
-
-
-def save_limits(data: dict) -> None:
-    with open(LIMITS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-
-def can_use_limit(user_id: int, key: str, limit: int) -> bool:
-    """
-    key: "walks" або "recs"
-    """
-    # Адмін без обмежень
-    if user_id == MY_ID:
-        return True
-
-    data = load_limits()
-    today = _today_str()
-    user_data = data.get(today, {}).get(str(user_id), {})
-    return user_data.get(key, 0) < limit
-
-
-def inc_limit(user_id: int, key: str) -> None:
-    """
-    Збільшує лічильник key ("walks" / "recs") для користувача на сьогодні.
-    """
-    if user_id == MY_ID:
-        return
-
-    data = load_limits()
-    today = _today_str()
-    day_data = data.setdefault(today, {})
-    uid = str(user_id)
-    user_data = day_data.setdefault(uid, {})
-    user_data[key] = user_data.get(key, 0) + 1
-    save_limits(data)
-
+def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """
     Повертає відстань між двома точками (lat/lon) в метрах.
     Формула гаверсинуса.
@@ -215,6 +167,15 @@ def inc_limit(user_id: int, key: str) -> None:
     a = sin(dphi / 2) ** 2 + cos(phi1) * cos(phi2) * sin(dlambda / 2) ** 2
     c = 2 * asin(sqrt(a))
     return R * c
+
+
+def _today_str() -> str:
+    """
+    Повертає дату за одеським часом для підрахунку добових лімітів.
+    """
+    now = datetime.now(ODESSA_TZ)
+    return now.strftime("%Y-%m-%d")
+
 
 # --- Стартове меню ---
 @dp.message(F.text == "/start")
