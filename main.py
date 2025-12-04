@@ -592,18 +592,6 @@ async def start_firm_route(
     # Фіксуємо використання прогулянки (фірмовий маршрут теж рахуємо)
     inc_limit(user_id, "walks")
 
-        1,
-        allowed_types=hist_types,
-        start_lat=start_lat,
-        start_lon=start_lon,
-        excluded_ids=visited,
-    )
-    if not first_list:
-        await message.answer("Не вдалося знайти першу історичну точку 😞")
-        return
-
-    first = first_list[0]
-
     # зберігаємо як відвідане
     if first.get("place_id"):
         add_visited(user_id, [first["place_id"]])
