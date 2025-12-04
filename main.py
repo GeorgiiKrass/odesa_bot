@@ -4,6 +4,7 @@ import asyncio
 import aiohttp
 import random
 from math import radians, sin, cos, asin, sqrt
+from datetime import datetime
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import (
@@ -39,6 +40,10 @@ MY_ID = int(os.getenv("MY_ID", "909231739"))
 PUMB_URL = "https://mobile-app.pumb.ua/VDdaNY9UzYmaK4fj8"
 USERS_FILE = "users.json"
 VISITED_FILE = "visited.json"
+LIMITS_FILE = "limits.json"
+
+DAILY_WALKS_LIMIT = 3   # прогулянки на добу
+DAILY_RECS_LIMIT = 5    # випадкові рекомендації на добу
 
 # Google Maps review links
 REVIEWS_MAIN_LINK = "https://share.google/iUAPUiXnjQ0uOOhzk"   # загальна сторінка відгуків
@@ -47,6 +52,11 @@ REVIEWS_BOT_LINK = "https://g.page/r/CYKKZ6sJyKz0EAE/review"   # відгук с
 # Створюємо visited.json, якщо його ще немає
 if not os.path.exists(VISITED_FILE):
     with open(VISITED_FILE, "w", encoding="utf-8") as f:
+        json.dump({}, f)
+        
+# Створюємо limits.json, якщо його ще немає
+if not os.path.exists(LIMITS_FILE):
+    with open(LIMITS_FILE, "w", encoding="utf-8") as f:
         json.dump({}, f)
 
 # --- Ініціалізація бота і диспетчера ---
@@ -140,6 +150,55 @@ def load_visited_all() -> dict[str, list[str]]:
 
 
 def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    # --- Ліміти використання (прогулянки/рекомендації на добу) ---
+def _today_str() -> str:
+    # можна UTC, щоб усе було стабільно
+    return datetime.utcnow().strftime("%Y-%m-%d")
+
+
+def load_limits() -> dict:
+    try:
+        with open(LIMITS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        data = {}
+    return data
+
+
+def save_limits(data: dict) -> None:
+    with open(LIMITS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def can_use_limit(user_id: int, key: str, limit: int) -> bool:
+    """
+    key: "walks" або "recs"
+    """
+    # Адмін без обмежень
+    if user_id == MY_ID:
+        return True
+
+    data = load_limits()
+    today = _today_str()
+    user_data = data.get(today, {}).get(str(user_id), {})
+    return user_data.get(key, 0) < limit
+
+
+def inc_limit(user_id: int, key: str) -> None:
+    """
+    Збільшує лічильник key ("walks" / "recs") для користувача на сьогодні.
+    """
+    if user_id == MY_ID:
+        return
+
+    data = load_limits()
+    today = _today_str()
+    day_data = data.setdefault(today, {})
+    uid = str(user_id)
+    user_data = day_data.setdefault(uid, {})
+    user_data[key] = user_data.get(key, 0) + 1
+    save_limits(data)
+
     """
     Повертає відстань між двома точками (lat/lon) в метрах.
     Формула гаверсинуса.
@@ -187,12 +246,22 @@ async def how_bot_works(message: Message) -> None:
 # --- Випадкова рекомендація (одна точка) ---
 @dp.message(F.text == "🎲 Випадкова рекомендація")
 async def random_recommendation(message: Message) -> None:
+    user_id = message.from_user.id
+
+    # Перевіряємо ліміт рекомендацій
+    if not can_use_limit(user_id, "recs", DAILY_RECS_LIMIT):
+        await message.answer(
+            "Схоже, ти вже отримав максимум випадкових рекомендацій на сьогодні (5) 🎲\n"
+            "Давай продовжимо завтра — Одеса нікуди не втече 💛"
+        )
+        return
+
     await message.answer("🔍 Шукаю для тебе цікаве місце в Одесі…")
 
-    user_id = message.from_user.id
     visited = load_visited(user_id)
-
     places = get_random_places(1, excluded_ids=visited)
+    ...
+
     if not places:
         await message.reply("Не вдалося знайти локацію 😞 Спробуй ще раз трохи пізніше.")
         return
@@ -229,6 +298,8 @@ async def random_recommendation(message: Message) -> None:
         [InlineKeyboardButton(text="✍️ Залишити відгук про цей БОТ", url=REVIEWS_BOT_LINK)],
         [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
     ])
+        # Фіксуємо використання рекомендації
+    inc_limit(user_id, "recs")
     await message.answer("Як тобі рекомендація? 😉", reply_markup=btns)
 
 
@@ -283,28 +354,36 @@ async def route_handler(message: Message) -> None:
         reply_markup=kb
     )
 
-
 async def send_route(
     message: Message,
     count: int,
     start_lat: float | None = None,
     start_lon: float | None = None,
 ) -> None:
+    user_id = message.from_user.id
+
+    # Перевіряємо ліміт прогулянок
+    if not can_use_limit(user_id, "walks", DAILY_WALKS_LIMIT):
+        await message.answer(
+            "На сьогодні ти вже пройшов максимальну кількість прогулянок (3) 🚶‍♂️\n"
+            "Повернись завтра — будемо досліджувати Одесу далі 💛"
+        )
+        return
+
     await message.answer("🔄 Шукаю цікаві місця на мапі…")
 
-    user_id = message.from_user.id
     visited = load_visited(user_id)
-
     places = get_random_places(
         count,
         start_lat=start_lat,
         start_lon=start_lon,
         excluded_ids=visited,
     )
+
     if not places:
         await message.reply("Не вдалося знайти локації 😞")
         return
-
+    
     for i, p in enumerate(places, 1):
         caption = f"<b>{i}. {p['name']}</b>\n"
         if p.get("rating"):
@@ -328,6 +407,8 @@ async def send_route(
     # позначаємо всі місця як відвідані
     new_ids = [p["place_id"] for p in places if p.get("place_id")]
     add_visited(user_id, new_ids)
+    # Фіксуємо використання прогулянки
+    inc_limit(user_id, "walks")
 
     maps_link, static_map = get_directions_image_url(places)
     if static_map:
@@ -471,19 +552,42 @@ async def start_firm_route(
     start_lon: float | None = None,
 ) -> None:
     """Старт фірмового маршруту від вказаних координат (або від центру, якщо None)."""
+    user_id = message.from_user.id
+
+    # Перевіряємо ліміт прогулянок
+    if not can_use_limit(user_id, "walks", DAILY_WALKS_LIMIT):
+        await message.answer(
+            "На сьогодні ти вже пройшов максимальну кількість прогулянок (3) 🚶‍♂️\n"
+            "Повернись завтра — підкинемо новий фірмовий маршрут 💛"
+        )
+        return
+
     await message.answer("🔄 Створюю фірмовий маршрут з 3 точок…")
 
-    # історичні/атмосферні типи місць
     hist_types = [
         "museum", "art_gallery", "library",
         "church", "synagogue", "park",
         "tourist_attraction"
     ]
 
-    user_id = message.from_user.id
     visited = load_visited(user_id)
 
     first_list = get_random_places(
+        1,
+        allowed_types=hist_types,
+        start_lat=start_lat,
+        start_lon=start_lon,
+        excluded_ids=visited,
+    )
+    if not first_list:
+        await message.answer("Не вдалося знайти першу історичну точку 😞")
+        return
+
+    first = first_list[0]
+
+    # Фіксуємо використання прогулянки (фірмовий маршрут теж рахуємо)
+    inc_limit(user_id, "walks")
+
         1,
         allowed_types=hist_types,
         start_lat=start_lat,
