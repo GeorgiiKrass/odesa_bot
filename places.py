@@ -1,11 +1,22 @@
 # places.py
 
-import random
-import requests
 import os
+import random
+from typing import List, Dict, Optional, Tuple
+
+import requests
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
+# Центр Одеси (базова точка для маршрутів, якщо не вказано інше)
+CENTER_LAT = 46.482952
+CENTER_LON = 30.712481
+
+# Радіуси пошуку в метрах
+INITIAL_RADIUS = 1500
+MAX_RADIUS = 5000
+
+# Типи закладів / місць, які можемо підбирати
 ALLOWED_TYPES = [
     "art_gallery", "museum", "park", "zoo", "church", "synagogue", "library",
     "movie_theater", "restaurant", "cafe", "tourist_attraction", "amusement_park",
@@ -15,127 +26,222 @@ ALLOWED_TYPES = [
     "fountain", "plaza", "sculpture", "historical_landmark", "campground"
 ]
 
-CENTER_LAT, CENTER_LON = 46.4825, 30.7233
-INITIAL_RADIUS = 3000
-STEP_RADIUS = 500
 
-
-def get_photo_url(photo_reference: str) -> str:
+def get_photo_url(photo_reference: str, maxwidth: int = 800) -> str:
+    """
+    Формує URL для отримання фото з Google Places Photo API.
+    """
+    if not GOOGLE_API_KEY or not photo_reference:
+        return ""
     return (
-        f"https://maps.googleapis.com/maps/api/place/photo?"
-        f"maxwidth=800&photoreference={photo_reference}&key={GOOGLE_API_KEY}"
+        "https://maps.googleapis.com/maps/api/place/photo"
+        f"?maxwidth={maxwidth}&photoreference={photo_reference}&key={GOOGLE_API_KEY}"
     )
 
 
-def get_random_places(n: int = 3, allowed_types: list[str] | None = None) -> list[dict]:
+def _place_from_item(item: Dict) -> Dict:
+    """
+    Витягує потрібну інформацію з елемента Google Places Nearby Search.
+    """
+    plat = item["geometry"]["location"]["lat"]
+    plon = item["geometry"]["location"]["lng"]
+
+    photo = None
+    if item.get("photos"):
+        photo_ref = item["photos"][0].get("photo_reference")
+        if photo_ref:
+            photo = get_photo_url(photo_ref)
+
+    return {
+        "name": item.get("name", "Без назви"),
+        "lat": plat,
+        "lon": plon,
+        "url": f"https://maps.google.com/?q={plat},{plon}",
+        "rating": item.get("rating"),
+        "reviews": item.get("user_ratings_total", 0),
+        "address": item.get("vicinity", "") or item.get("formatted_address", ""),
+        "photo": photo,
+    }
+
+
+def get_random_places(
+    n: int = 3,
+    allowed_types: Optional[List[str]] = None,
+    start_lat: Optional[float] = None,
+    start_lon: Optional[float] = None,
+) -> List[Dict]:
+    """
+    Повертає список з n випадкових локацій.
+    Якщо start_lat/start_lon задані — стартуємо від цих координат,
+    інакше — від центру Одеси.
+    """
+    if not GOOGLE_API_KEY:
+        # Без ключа ми не можемо звернутися до Google Places API
+        return []
+
     types_pool = allowed_types or ALLOWED_TYPES
-    all_places, used_ids, used_types = [], set(), set()
-    current_lat, current_lon, radius = CENTER_LAT, CENTER_LON, INITIAL_RADIUS
+    all_places: List[Dict] = []
+    used_ids = set()
+    used_types = set()
+
+    base_lat = start_lat if start_lat is not None else CENTER_LAT
+    base_lon = start_lon if start_lon is not None else CENTER_LON
+
+    current_lat, current_lon, radius = base_lat, base_lon, INITIAL_RADIUS
     attempts = 0
 
-    while len(all_places) < n and attempts < 30:
+    while len(all_places) < n and attempts < 40:
+        attempts += 1
+
+        # намагаємося не повторювати типи підряд, щоб був мікс локацій
         choices = list(set(types_pool) - used_types) or types_pool
         t = random.choice(choices)
         used_types.add(t)
 
         resp = requests.get(
             "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
-            params={"location": f"{current_lat},{current_lon}", "radius": radius, "type": t, "key": GOOGLE_API_KEY}
+            params={
+                "location": f"{current_lat},{current_lon}",
+                "radius": radius,
+                "type": t,
+                "key": GOOGLE_API_KEY,
+            },
+            timeout=10,
         ).json()
+
         candidates = resp.get("results", [])
         random.shuffle(candidates)
 
+        picked = False
         for item in candidates:
-            pid = item["place_id"]
-            if pid in used_ids:
+            pid = item.get("place_id")
+            if not pid or pid in used_ids:
                 continue
 
-            lat = item["geometry"]["location"]["lat"]
-            lon = item["geometry"]["location"]["lng"]
-            photo = None
-            if item.get("photos"):
-                photo_ref = item["photos"][0].get("photo_reference")
-                photo = get_photo_url(photo_ref) if photo_ref else None
-
-            all_places.append({
-                "name": item["name"],
-                "lat": lat, "lon": lon,
-                "url": f"https://maps.google.com/?q={lat},{lon}",
-                "rating": item.get("rating"),
-                "address": item.get("vicinity", ""),
-                "photo": photo
-            })
+            place = _place_from_item(item)
+            all_places.append(place)
             used_ids.add(pid)
-            current_lat, current_lon = lat, lon
-            radius = STEP_RADIUS
+
+            # наступний пошук робимо вже з цієї точки, щоб «маршрут» рухався містом
+            current_lat = place["lat"]
+            current_lon = place["lon"]
+            picked = True
             break
 
-        attempts += 1
+        # якщо нічого не знайшли для цього типу — трохи розширюємо радіус
+        if not picked and radius < MAX_RADIUS:
+            radius = min(radius + 500, MAX_RADIUS)
 
     return all_places[:n]
 
 
-def get_random_place_near(lat: float, lon: float, radius: int, allowed_types: list[str] | None = None) -> dict | None:
+def get_random_place_near(
+    lat: float,
+    lon: float,
+    radius: int = 1500,
+    allowed_types: Optional[List[str]] = None,
+) -> Optional[Dict]:
     """
-    Возвращает одну случайную локацию из Google Places API в радиусе radius метров от точки (lat, lon).
+    Повертає одну випадкову локацію поблизу заданих координат.
+    Використовується у «фірмовому маршруті».
     """
+    if not GOOGLE_API_KEY:
+        return None
+
     types_pool = allowed_types or ALLOWED_TYPES
     used_types = set()
     attempts = 0
 
     while attempts < 30:
+        attempts += 1
         choices = list(set(types_pool) - used_types) or types_pool
         t = random.choice(choices)
         used_types.add(t)
 
         resp = requests.get(
             "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
-            params={"location": f"{lat},{lon}", "radius": radius, "type": t, "key": GOOGLE_API_KEY}
+            params={
+                "location": f"{lat},{lon}",
+                "radius": radius,
+                "type": t,
+                "key": GOOGLE_API_KEY,
+            },
+            timeout=10,
         ).json()
+
         candidates = resp.get("results", [])
         random.shuffle(candidates)
 
         for item in candidates:
-            plat = item["geometry"]["location"]["lat"]
-            plon = item["geometry"]["location"]["lng"]
-            photo = None
-            if item.get("photos"):
-                photo_ref = item["photos"][0].get("photo_reference")
-                photo = get_photo_url(photo_ref) if photo_ref else None
-
-            return {
-                "name": item["name"],
-                "lat": plat,
-                "lon": plon,
-                "url": f"https://maps.google.com/?q={plat},{plon}",
-                "rating": item.get("rating"),
-                "address": item.get("vicinity", ""),
-                "photo": photo
-            }
-
-        attempts += 1
+            return _place_from_item(item)
 
     return None
 
 
-def get_directions_image_url(places: list[dict]) -> tuple[str|None, str|None]:
-    if len(places) < 2:
+def get_directions_image_url(places: List[Dict]) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Генерує:
+      • maps_link — посилання на маршрут у Google Maps
+      • static_url — посилання на статичну картинку маршруту (Static Maps API)
+    """
+    if not places:
         return None, None
+
+    # Якщо лише одна точка — просто карта й пошук
+    if len(places) == 1:
+        p = places[0]
+        origin = f"{p['lat']},{p['lon']}"
+        maps_link = f"https://www.google.com/maps/search/?api=1&query={origin}"
+
+        if not GOOGLE_API_KEY:
+            return maps_link, None
+
+        static_url = (
+            "https://maps.googleapis.com/maps/api/staticmap"
+            f"?center={origin}&zoom=15&size=640x400"
+            f"&markers={origin}&key={GOOGLE_API_KEY}"
+        )
+        return maps_link, static_url
+
+    # Статична карта з маркерами та шляхом
+    if not GOOGLE_API_KEY:
+        # навіть без ключа можемо хоча б дати maps_link
+        origin = f"{places[0]['lat']},{places[0]['lon']}"
+        dest = f"{places[-1]['lat']},{places[-1]['lon']}"
+        wayp = "|".join(f"{p['lat']},{p['lon']}" for p in places[1:-1])
+        maps_link = (
+            "https://www.google.com/maps/dir/?api=1"
+            f"&origin={origin}&destination={dest}&travelmode=walking"
+        )
+        if wayp:
+            maps_link += f"&waypoints={wayp}"
+        return maps_link, None
+
     base_static = "https://maps.googleapis.com/maps/api/staticmap"
-    markers = [f"color:blue|label:{i+1}|{p['lat']},{p['lon']}" for i, p in enumerate(places)]
-    path = "color:0x0000ff|weight:5|" + "|".join(f"{p['lat']},{p['lon']}" for p in places)
-    static_url = (
-        f"{base_static}?size=640x400&" +
-        "&".join(f"markers={m}" for m in markers) +
-        f"&path={path}&key={GOOGLE_API_KEY}"
+
+    markers = [
+        f"size:mid|label:{i+1}|{p['lat']},{p['lon']}"
+        for i, p in enumerate(places)
+    ]
+    path = "color:0x0000ff|weight:4|" + "|".join(
+        f"{p['lat']},{p['lon']}" for p in places
     )
+
+    static_url = (
+        f"{base_static}?size=640x400&"
+        + "&".join(f"markers={m}" for m in markers)
+        + f"&path={path}&key={GOOGLE_API_KEY}"
+    )
+
     origin = f"{places[0]['lat']},{places[0]['lon']}"
     dest = f"{places[-1]['lat']},{places[-1]['lon']}"
     wayp = "|".join(f"{p['lat']},{p['lon']}" for p in places[1:-1])
+
     maps_link = (
-        f"https://www.google.com/maps/dir/?api=1&origin={origin}&destination={dest}"
-        f"&travelmode=walking"
+        "https://www.google.com/maps/dir/?api=1"
+        f"&origin={origin}&destination={dest}&travelmode=walking"
     )
     if wayp:
         maps_link += f"&waypoints={wayp}"
+
     return maps_link, static_url
