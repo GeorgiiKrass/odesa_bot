@@ -728,8 +728,19 @@ async def start_from_here(message: Message) -> None:
         )
         return
 
+    # Клавіатура з кнопкою для відправки локації
+    kb = ReplyKeyboardMarkup(
+        resize_keyboard=True,
+        one_time_keyboard=True,
+        keyboard=[
+            [KeyboardButton(text="📍 Надіслати мою локацію", request_location=True)],
+            [KeyboardButton(text="⬅ Назад")],
+        ],
+    )
+
     await message.answer(
-        "Надішли геолокацію 📍 (поділися своєю локацією через скріпку або кнопку в Telegram)."
+        "Натисни кнопку нижче, щоб поділитися своєю геолокацією 📍",
+        reply_markup=kb,
     )
 
 
