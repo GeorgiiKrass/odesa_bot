@@ -686,7 +686,7 @@ async def send_route_step(message: Message, user_id: int) -> None:
         buttons.append(
             [
                 InlineKeyboardButton(
-                    text="✅ Завершити маршрут",
+                    text="✅ Маршрут завершено — в меню",
                     callback_data="route_finish",
                 )
             ]
@@ -941,13 +941,12 @@ async def route_review_callback(callback: types.CallbackQuery) -> None:
 async def route_finish_callback(callback: types.CallbackQuery) -> None:
     """
     Ручне завершення маршруту (коли показана остання точка).
+    Після цього одразу повертаємо користувача в головне меню.
     """
     user_id = callback.from_user.id
     active_routes.pop(user_id, None)
     await callback.answer()
-    await callback.message.answer(
-        "Маршрут завершено 🎉 Повернись у меню, щоб запустити новий."
-    )
+    await start_handler(callback.message)
 
 
 @dp.callback_query(F.data == "back_to_menu")
