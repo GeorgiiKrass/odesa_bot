@@ -310,7 +310,6 @@ async def how_bot_works(message: Message) -> None:
     )
 
 
-# --- Випадкова рекомендація (одна точка) ---
 @dp.message(F.text == "🎲 Випадкова рекомендація")
 async def random_recommendation(message: Message) -> None:
     user_id = message.from_user.id
@@ -333,9 +332,12 @@ async def random_recommendation(message: Message) -> None:
 
     p = places[0]
 
-    # Запам'ятовуємо place_id та урл
+    # place_id + кеш урлу
     place_id = remember_place(p)
     maps_url = place_url_cache.get(place_id, p.get("url", ""))
+
+    # оновлюємо останній стан одиночної рекомендації
+    single_last_state[user_id] = {"place_id": place_id, "interesting": False}
 
     # Лог: місце показане користувачу
     log_feedback_action(
@@ -393,7 +395,77 @@ async def random_recommendation(message: Message) -> None:
         [InlineKeyboardButton(text="✍️ Залишити відгук про цей БОТ", url=REVIEWS_BOT_LINK)],
         [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
     ])
-    await message.answer("Як тобі рекомендація? 😉", reply_markup=btns)
+    await message.answer("Як тобі рекомендація? 😉", reply_markup=btns)  
+
+@dp.callback_query(F.data.startswith("single_map:"))
+async def single_map_callback(callback: types.CallbackQuery) -> None:
+    """
+    🧭 Цікаво, відкрити на мапі — для одиночної рекомендації.
+    Логуємо "interesting".
+    """
+    _, place_id = callback.data.split(":", 1)
+    maps_url = place_url_cache.get(place_id, "")
+    if not maps_url:
+        await callback.answer("Не вдалося знайти лінк на мапу 😞", show_alert=True)
+        return
+
+    # відмічаємо, що користувач зацікавився цією локацією
+    st = single_last_state.get(callback.from_user.id)
+    if st and st.get("place_id") == place_id:
+        st["interesting"] = True
+
+    log_feedback_action(
+        action="interesting",
+        user=callback.from_user,
+        place_id=place_id,
+        maps_url=maps_url,
+        context="single",
+    )
+
+    await callback.answer()
+    await callback.message.answer(f"🧭 Відкрити на мапі:\n{maps_url}")
+
+
+@dp.callback_query(F.data.startswith("single_next:"))
+async def single_next_callback(callback: types.CallbackQuery) -> None:
+    """
+    ➡️ Далі — якщо не було 'Цікаво', вважаємо not_interesting,
+    потім показуємо наступну рекомендацію.
+    """
+    _, place_id = callback.data.split(":", 1)
+    maps_url = place_url_cache.get(place_id, "")
+
+    st = single_last_state.get(callback.from_user.id)
+    # якщо по цій локації НЕ було "Цікаво" → not_interesting
+    if not (st and st.get("place_id") == place_id and st.get("interesting")):
+        log_feedback_action(
+            action="not_interesting",
+            user=callback.from_user,
+            place_id=place_id,
+            maps_url=maps_url,
+            context="single",
+        )
+
+    # очищаємо стан і показуємо наступну рекомендацію
+    single_last_state.pop(callback.from_user.id, None)
+
+    await callback.answer()
+    fake_msg = callback.message
+    # підміняємо from_user, щоб random_recommendation працювала як зі звичайним повідомленням
+    fake_msg.from_user = callback.from_user
+    await random_recommendation(fake_msg)
+
+
+@dp.callback_query(F.data.startswith("single_review:"))
+async def single_review_callback(callback: types.CallbackQuery) -> None:
+    """
+    Заглушка для майбутніх власних відгуків по цьому місцю.
+    Поки що просто показуємо повідомлення.
+    """
+    await callback.answer(
+        "Скоро тут можна буде залишити свій відгук по цьому місцю 💛",
+        show_alert=True,
+    )
 
 @dp.callback_query(F.data.startswith("single_map:"))
 async def single_map_callback(callback: types.CallbackQuery) -> None:
@@ -864,17 +936,17 @@ async def firm_show_budget(callback: types.CallbackQuery) -> None:
     await callback.answer()
 
     budget = random.choice([
-        "100 грн", "200 грн", "300 грн", "500 грн", "1000 грн",
-        "50 грн", "150 грн", "250 грн"
+        "50 грн", "100 грн", "150 грн", "200 грн",
+        "250 грн", "300 грн", "500 грн", "Скільки не жалко 💛",
     ])
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
+        [InlineKeyboardButton(text="✅ Маршрут завершено — в меню", callback_data="back_to_menu")],
         [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)],
         [InlineKeyboardButton(text="✍️ Залишити відгук про цей БОТ", url=REVIEWS_BOT_LINK)],
     ])
 
-    await callback.message.answer(f"🎯 Бюджет: <b>{budget}</b>", reply_markup=kb)
+    await callback.message.answer(f"🎯 Бюджет цього маршруту: <b>{budget}</b>", reply_markup=kb)
 
 
 @dp.callback_query(F.data == "back_to_menu")
