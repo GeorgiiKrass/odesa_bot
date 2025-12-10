@@ -81,6 +81,10 @@ user_route_state: dict[int, dict] = {}
 
 place_url_cache: dict[str, str] = {}
 
+# остання одиночна рекомендація для користувача:
+# { user_id: { "place_id": str, "interesting": bool } }
+single_last_state: dict[int, dict] = {}
+
 # --- Утиліти для роботи з users.json ---
 def save_user(user_id: int) -> None:
     """Додає user_id в users.json, якщо його там ще немає."""
@@ -467,65 +471,6 @@ async def single_review_callback(callback: types.CallbackQuery) -> None:
         show_alert=True,
     )
 
-@dp.callback_query(F.data.startswith("single_map:"))
-async def single_map_callback(callback: types.CallbackQuery) -> None:
-    """
-    Обробка кнопки 🧭 Цікаво, відкрити на мапі для одиночної рекомендації.
-    Логуємо "interesting" і відправляємо лінк.
-    """
-    _, place_id = callback.data.split(":", 1)
-    maps_url = place_url_cache.get(place_id, "")
-    if not maps_url:
-        await callback.answer("Не вдалося знайти лінк на мапу 😞", show_alert=True)
-        return
-
-    log_feedback_action(
-        action="interesting",
-        user=callback.from_user,
-        place_id=place_id,
-        maps_url=maps_url,
-        context="single",
-    )
-
-    await callback.answer()
-    await callback.message.answer(f"🧭 Відкрити на мапі:\n{maps_url}")
-
-
-@dp.callback_query(F.data.startswith("single_next:"))
-async def single_next_callback(callback: types.CallbackQuery) -> None:
-    """
-    Обробка кнопки ➡️ Далі для одиночної рекомендації.
-    Якщо користувач не натиснув "Цікаво", вважаємо це not_interesting для попереднього місця.
-    Потім показуємо нову рекомендацію.
-    """
-    _, place_id = callback.data.split(":", 1)
-    maps_url = place_url_cache.get(place_id, "")
-
-    log_feedback_action(
-        action="not_interesting",
-        user=callback.from_user,
-        place_id=place_id,
-        maps_url=maps_url,
-        context="single",
-    )
-
-    await callback.answer()
-    # Емулюємо новий запит як при натисканні "🎲 Випадкова рекомендація"
-    fake_msg = callback.message
-    fake_msg.from_user = callback.from_user
-    await random_recommendation(fake_msg)
-
-
-@dp.callback_query(F.data.startswith("single_review:"))
-async def single_review_callback(callback: types.CallbackQuery) -> None:
-    """
-    Заглушка для майбутніх власних відгуків по цьому місцю.
-    Поки що просто показуємо повідомлення.
-    """
-    await callback.answer(
-        "Скоро тут можна буде залишити свій відгук по цьому місцю 💛",
-        show_alert=True,
-    )
 
 # --- Меню «Вирушити на прогулянку» ---
 @dp.message(F.text == "🚶‍♂️ Вирушити на прогулянку")
