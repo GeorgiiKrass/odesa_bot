@@ -42,6 +42,7 @@ PUMB_URL = "https://mobile-app.pumb.ua/VDdaNY9UzYmaK4fj8"
 USERS_FILE = "users.json"
 VISITED_FILE = "visited.json"
 LIMITS_FILE = "limits.json"
+FEEDBACK_FILE = "feedback.json"
 
 DAILY_WALKS_LIMIT = 3   # прогулянки на добу
 DAILY_RECS_LIMIT = 5    # випадкові рекомендації на добу
@@ -65,6 +66,10 @@ if not os.path.exists(USERS_FILE):
     with open(USERS_FILE, "w", encoding="utf-8") as f:
         json.dump([], f)
 
+if not os.path.exists(FEEDBACK_FILE):
+    with open(FEEDBACK_FILE, "w", encoding="utf-8") as f:
+        json.dump([], f, ensure_ascii=False, indent=2)
+
 # --- Ініціалізація бота і диспетчера ---
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
@@ -74,6 +79,7 @@ user_feedback_state: dict[int, bool] = {}
 # mode: "random" | "firm"
 user_route_state: dict[int, dict] = {}
 
+place_url_cache: dict[str, str] = {}
 
 # --- Утиліти для роботи з users.json ---
 def save_user(user_id: int) -> None:
@@ -153,6 +159,57 @@ def load_visited_all() -> dict[str, list[str]]:
         data = {}
     return data
 
+def remember_place(place: dict) -> str:
+    """
+    Запам'ятовує place_id та url місця в локальному кеші.
+    Повертає place_id (навіть якщо в оригінальних даних його не було).
+    """
+    place_id = place.get("place_id") or place.get("url")
+    if not place_id:
+        # fallback, якщо немає ані place_id, ані url
+        place_id = f"noid_{random.randint(1, 10**9)}"
+    url = place.get("url")
+    if url:
+        place_url_cache[place_id] = url
+    return place_id
+
+
+def log_feedback_action(
+    action: str,
+    user: types.User,
+    place_id: str,
+    maps_url: str | None,
+    context: str = "single",
+) -> None:
+    """
+    Логує взаємодії користувача з локацією у feedback.json.
+    action: "shown" | "interesting" | "not_interesting"
+    context: "single" | "route" | "firm" | "gastro"
+    """
+    try:
+        with open(FEEDBACK_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        data = []
+
+    if not isinstance(data, list):
+        data = []
+
+    ts = datetime.now(ODESSA_TZ).isoformat()
+
+    entry = {
+        "timestamp": ts,
+        "user_id": user.id,
+        "user_name": f"{user.first_name or ''} {user.last_name or ''}".strip(),
+        "place_id": place_id,
+        "maps_url": maps_url,
+        "action": action,
+        "context": context,
+    }
+    data.append(entry)
+
+    with open(FEEDBACK_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 # --- Ліміти використання ---
 def _today_str() -> str:
@@ -276,26 +333,52 @@ async def random_recommendation(message: Message) -> None:
 
     p = places[0]
 
+    # Запам'ятовуємо place_id та урл
+    place_id = remember_place(p)
+    maps_url = place_url_cache.get(place_id, p.get("url", ""))
+
+    # Лог: місце показане користувачу
+    log_feedback_action(
+        action="shown",
+        user=message.from_user,
+        place_id=place_id,
+        maps_url=maps_url,
+        context="single",
+    )
+
     caption = f"<b>{p['name']}</b>\n"
     if p.get("rating"):
         caption += f"⭐ {p['rating']} ({p.get('reviews', 0)} відгуків)\n"
     caption += p.get("address", "")
 
-    # Лінк на відгуки по цьому місцю
-    if p.get("place_id"):
-        place_review_url = f"https://search.google.com/local/writereview?placeid={p['place_id']}"
-    else:
-        place_review_url = p["url"]
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🗺 Відкрити на мапі", url=p["url"])],
-        [InlineKeyboardButton(text="⭐ Залишити відгук по цьому місцю", url=place_review_url)],
-    ])
+    # Кнопки саме під локацією
+    kb_place = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🧭 Цікаво, відкрити на мапі",
+                    callback_data=f"single_map:{place_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✍️ Залишити відгук по цьому місцю",
+                    callback_data=f"single_review:{place_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="➡️ Далі",
+                    callback_data=f"single_next:{place_id}",
+                )
+            ],
+        ]
+    )
 
     if p.get("photo"):
-        await message.answer_photo(photo=p["photo"], caption=caption, reply_markup=kb)
+        await message.answer_photo(photo=p["photo"], caption=caption, reply_markup=kb_place)
     else:
-        await message.answer(caption, reply_markup=kb)
+        await message.answer(caption, reply_markup=kb_place)
 
     # зберігаємо як відвідане
     if p.get("place_id"):
@@ -304,6 +387,7 @@ async def random_recommendation(message: Message) -> None:
     # Фіксуємо використання рекомендації
     inc_limit(user_id, "recs")
 
+    # Нижнє повідомлення з підтримкою / відгуком про бот
     btns = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)],
         [InlineKeyboardButton(text="✍️ Залишити відгук про цей БОТ", url=REVIEWS_BOT_LINK)],
@@ -311,6 +395,65 @@ async def random_recommendation(message: Message) -> None:
     ])
     await message.answer("Як тобі рекомендація? 😉", reply_markup=btns)
 
+@dp.callback_query(F.data.startswith("single_map:"))
+async def single_map_callback(callback: types.CallbackQuery) -> None:
+    """
+    Обробка кнопки 🧭 Цікаво, відкрити на мапі для одиночної рекомендації.
+    Логуємо "interesting" і відправляємо лінк.
+    """
+    _, place_id = callback.data.split(":", 1)
+    maps_url = place_url_cache.get(place_id, "")
+    if not maps_url:
+        await callback.answer("Не вдалося знайти лінк на мапу 😞", show_alert=True)
+        return
+
+    log_feedback_action(
+        action="interesting",
+        user=callback.from_user,
+        place_id=place_id,
+        maps_url=maps_url,
+        context="single",
+    )
+
+    await callback.answer()
+    await callback.message.answer(f"🧭 Відкрити на мапі:\n{maps_url}")
+
+
+@dp.callback_query(F.data.startswith("single_next:"))
+async def single_next_callback(callback: types.CallbackQuery) -> None:
+    """
+    Обробка кнопки ➡️ Далі для одиночної рекомендації.
+    Якщо користувач не натиснув "Цікаво", вважаємо це not_interesting для попереднього місця.
+    Потім показуємо нову рекомендацію.
+    """
+    _, place_id = callback.data.split(":", 1)
+    maps_url = place_url_cache.get(place_id, "")
+
+    log_feedback_action(
+        action="not_interesting",
+        user=callback.from_user,
+        place_id=place_id,
+        maps_url=maps_url,
+        context="single",
+    )
+
+    await callback.answer()
+    # Емулюємо новий запит як при натисканні "🎲 Випадкова рекомендація"
+    fake_msg = callback.message
+    fake_msg.from_user = callback.from_user
+    await random_recommendation(fake_msg)
+
+
+@dp.callback_query(F.data.startswith("single_review:"))
+async def single_review_callback(callback: types.CallbackQuery) -> None:
+    """
+    Заглушка для майбутніх власних відгуків по цьому місцю.
+    Поки що просто показуємо повідомлення.
+    """
+    await callback.answer(
+        "Скоро тут можна буде залишити свій відгук по цьому місцю 💛",
+        show_alert=True,
+    )
 
 # --- Меню «Вирушити на прогулянку» ---
 @dp.message(F.text == "🚶‍♂️ Вирушити на прогулянку")
