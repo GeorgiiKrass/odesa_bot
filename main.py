@@ -946,7 +946,7 @@ async def firm_show_budget(callback: types.CallbackQuery) -> None:
         [InlineKeyboardButton(text="✍️ Залишити відгук про цей БОТ", url=REVIEWS_BOT_LINK)],
     ])
 
-    await callback.message.answer(f"🎯 Бюджет цього маршруту: <b>{budget}</b>", reply_markup=kb)
+    await callback.message.answer(f"🎯 Бюджет: <b>{budget}</b>", reply_markup=kb)
 
 
 @dp.callback_query(F.data == "back_to_menu")
