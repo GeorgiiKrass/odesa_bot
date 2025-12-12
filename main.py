@@ -313,6 +313,81 @@ async def how_bot_works(message: Message) -> None:
         "Спробуй один із режимів у меню 👇"
     )
 
+# === Google Sheets helpers (feedback) ===
+_gs_spread = None
+_gs_ws_cache = {}
+
+def _gs_get_spread():
+    global _gs_spread
+    if _gs_spread is not None:
+        return _gs_spread
+
+    if not GSHEETS_AVAILABLE:
+        raise RuntimeError("GSHEETS not available (gspread not installed)")
+
+    creds_json = os.getenv("GSPREAD_CREDENTIALS_JSON")
+    sheet_id = os.getenv("GSPREAD_SPREADSHEET_ID")
+    if not creds_json or not sheet_id:
+        raise RuntimeError("Missing GSPREAD_CREDENTIALS_JSON or GSPREAD_SPREADSHEET_ID")
+
+    try:
+        info = json.loads(creds_json)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Invalid GSPREAD_CREDENTIALS_JSON: {e}")
+
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    creds = Credentials.from_service_account_info(info, scopes=scopes)
+    gc = gspread.authorize(creds)
+    _gs_spread = gc.open_by_key(sheet_id)
+    return _gs_spread
+
+def _gs_get_ws(name: str):
+    if name in _gs_ws_cache:
+        return _gs_ws_cache[name]
+    sp = _gs_get_spread()
+    try:
+        ws = sp.worksheet(name)
+    except Exception:
+        ws = sp.add_worksheet(title=name, rows=2000, cols=20)
+    _gs_ws_cache[name] = ws
+    return ws
+
+def _gs_ensure_header(ws, header: list[str]):
+    existing = ws.row_values(1)
+    if not existing:
+        ws.update("A1", [header])
+
+async def gs_append_row(sheet_name: str, row: list, header: list[str] | None = None):
+    def _do():
+        ws = _gs_get_ws(sheet_name)
+        if header:
+            _gs_ensure_header(ws, header)
+        ws.append_row(row, value_input_option="RAW")
+    # gspread блокирующий → в отдельный поток
+    await asyncio.to_thread(_do)
+
+def remember_place(place: dict) -> str:
+    place_id = place.get("place_id") or place.get("url")
+    if not place_id:
+        place_id = f"noid_{random.randint(1, 10**9)}"
+    url = place.get("url")
+    if url:
+        place_url_cache[place_id] = url
+    return place_id
+
+async def log_feedback_action(action: str, user: types.User, place_id: str, maps_url: str | None, context: str = "single"):
+    ts = datetime.now(ODESSA_TZ).isoformat()
+    user_name = user.username or f"{user.first_name or ''} {user.last_name or ''}".strip()
+    row = [ts, str(user.id), user_name, place_id, maps_url or "", action, context]
+    header = ["timestamp", "user_id", "user_name", "place_id", "maps_url", "action", "context"]
+    try:
+        await gs_append_row("feedback", row, header=header)
+    except Exception as e:
+        # не валим бота из-за таблицы
+        print("GSHEETS feedback write error:", e)
 
 @dp.message(F.text == "🎲 Випадкова рекомендація")
 async def random_recommendation(message: Message) -> None:
