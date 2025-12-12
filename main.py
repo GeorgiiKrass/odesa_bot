@@ -163,58 +163,6 @@ def load_visited_all() -> dict[str, list[str]]:
         data = {}
     return data
 
-def remember_place(place: dict) -> str:
-    """
-    Запам'ятовує place_id та url місця в локальному кеші.
-    Повертає place_id (навіть якщо в оригінальних даних його не було).
-    """
-    place_id = place.get("place_id") or place.get("url")
-    if not place_id:
-        # fallback, якщо немає ані place_id, ані url
-        place_id = f"noid_{random.randint(1, 10**9)}"
-    url = place.get("url")
-    if url:
-        place_url_cache[place_id] = url
-    return place_id
-
-
-def log_feedback_action(
-    action: str,
-    user: types.User,
-    place_id: str,
-    maps_url: str | None,
-    context: str = "single",
-) -> None:
-    """
-    Логує взаємодії користувача з локацією у feedback.json.
-    action: "shown" | "interesting" | "not_interesting"
-    context: "single" | "route" | "firm" | "gastro"
-    """
-    try:
-        with open(FEEDBACK_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        data = []
-
-    if not isinstance(data, list):
-        data = []
-
-    ts = datetime.now(ODESSA_TZ).isoformat()
-
-    entry = {
-        "timestamp": ts,
-        "user_id": user.id,
-        "user_name": f"{user.first_name or ''} {user.last_name or ''}".strip(),
-        "place_id": place_id,
-        "maps_url": maps_url,
-        "action": action,
-        "context": context,
-    }
-    data.append(entry)
-
-    with open(FEEDBACK_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
 # --- Ліміти використання ---
 def _today_str() -> str:
     """
@@ -455,77 +403,6 @@ async def random_recommendation(message: Message) -> None:
     await message.answer("🔍 Шукаю для тебе цікаве місце в Одесі…")
     await send_single_recommendation(message.chat.id, message.from_user)
 
-    visited = load_visited(user_id)
-    places = get_random_places(1, excluded_ids=visited)
-    if not places:
-        await message.reply("Не вдалося знайти локацію 😞 Спробуй ще раз трохи пізніше.")
-        return
-
-    p = places[0]
-
-    # place_id + кеш урлу
-    place_id = remember_place(p)
-    maps_url = place_url_cache.get(place_id, p.get("url", ""))
-
-    # оновлюємо останній стан одиночної рекомендації
-    single_last_state[user_id] = {"place_id": place_id, "interesting": False}
-
-    # Лог: місце показане користувачу
-    await log_feedback_action(
-    action="shown",
-    user=message.from_user,
-    place_id=place_id,
-    maps_url=maps_url,
-    context="single",
-)
-
-    caption = f"<b>{p['name']}</b>\n"
-    if p.get("rating"):
-        caption += f"⭐ {p['rating']} ({p.get('reviews', 0)} відгуків)\n"
-    caption += p.get("address", "")
-
-    # Кнопки саме під локацією
-    kb_place = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🧭 Цікаво, відкрити на мапі",
-                    callback_data=f"single_map:{place_id}",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="✍️ Залишити відгук по цьому місцю",
-                    callback_data=f"single_review:{place_id}",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="➡️ Далі",
-                    callback_data=f"single_next:{place_id}",
-                )
-            ],
-        ]
-    )
-
-    if p.get("photo"):
-        await message.answer_photo(photo=p["photo"], caption=caption, reply_markup=kb_place)
-    else:
-        await message.answer(caption, reply_markup=kb_place)
-
-    # зберігаємо як відвідане
-    if p.get("place_id"):
-        add_visited(user_id, [p["place_id"]])
-
-    # Фіксуємо використання рекомендації
-    inc_limit(user_id, "recs")
-
-    # Нижнє повідомлення з підтримкою / відгуком про бот
-    btns = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✍️ Залишити відгук про цей БОТ", url=REVIEWS_BOT_LINK)],
-        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
-    ])
-    await message.answer("Як тобі рекомендація? 😉", reply_markup=btns)  
 
 @dp.callback_query(F.data.startswith("single_map:"))
 async def single_map_callback(callback: types.CallbackQuery) -> None:
