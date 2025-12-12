@@ -389,6 +389,57 @@ async def log_feedback_action(action: str, user: types.User, place_id: str, maps
         # не валим бота из-за таблицы
         print("GSHEETS feedback write error:", e)
 
+async def send_single_recommendation(chat_id: int, user: types.User) -> None:
+    user_id = user.id
+
+    visited = load_visited(user_id)
+    places = get_random_places(1, excluded_ids=visited)
+    if not places:
+        await bot.send_message(chat_id, "Не вдалося знайти локацію 😞 Спробуй ще раз трохи пізніше.")
+        return
+
+    p = places[0]
+
+    place_id = remember_place(p)
+    maps_url = place_url_cache.get(place_id, p.get("url", ""))
+
+    # state для логіки not_interesting на "Далі"
+    single_last_state[user_id] = {"place_id": place_id, "interesting": False}
+
+    # LOG: shown
+    await log_feedback_action(
+        action="shown",
+        user=user,
+        place_id=place_id,
+        maps_url=maps_url,
+        context="single",
+    )
+
+    caption = f"<b>{p['name']}</b>\n"
+    if p.get("rating"):
+        caption += f"⭐ {p['rating']} ({p.get('reviews', 0)} відгуків)\n"
+    caption += p.get("address", "")
+
+    # ПІД ЛОКАЦІЄЮ тільки 2 кнопки: 🧭 і ➡️
+    kb_place = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🧭 Цікаво, відкрити на мапі", callback_data=f"single_map:{place_id}")],
+            [InlineKeyboardButton(text="➡️ Далі", callback_data=f"single_next:{place_id}")],
+        ]
+    )
+
+    if p.get("photo"):
+        await bot.send_photo(chat_id, photo=p["photo"], caption=caption, reply_markup=kb_place)
+    else:
+        await bot.send_message(chat_id, caption, reply_markup=kb_place)
+
+    # visited
+    if p.get("place_id"):
+        add_visited(user_id, [p["place_id"]])
+
+    # limit
+    inc_limit(user_id, "recs")
+
 @dp.message(F.text == "🎲 Випадкова рекомендація")
 async def random_recommendation(message: Message) -> None:
     user_id = message.from_user.id
@@ -402,6 +453,7 @@ async def random_recommendation(message: Message) -> None:
         return
 
     await message.answer("🔍 Шукаю для тебе цікаве місце в Одесі…")
+    await send_single_recommendation(message.chat.id, message.from_user)
 
     visited = load_visited(user_id)
     places = get_random_places(1, excluded_ids=visited)
@@ -478,31 +530,37 @@ async def random_recommendation(message: Message) -> None:
 
 @dp.callback_query(F.data.startswith("single_map:"))
 async def single_map_callback(callback: types.CallbackQuery) -> None:
-    """
-    🧭 Цікаво, відкрити на мапі — для одиночної рекомендації.
-    Логуємо "interesting".
-    """
     _, place_id = callback.data.split(":", 1)
     maps_url = place_url_cache.get(place_id, "")
     if not maps_url:
         await callback.answer("Не вдалося знайти лінк на мапу 😞", show_alert=True)
         return
 
-    # відмічаємо, що користувач зацікавився цією локацією
+    # ставимо прапорець "interesting"
     st = single_last_state.get(callback.from_user.id)
     if st and st.get("place_id") == place_id:
         st["interesting"] = True
 
+    # LOG: interesting (ВАЖЛИВО: await)
     await log_feedback_action(
-    action="interesting",
-    user=callback.from_user,
-    place_id=place_id,
-    maps_url=maps_url,
-    context="single",
-)
+        action="interesting",
+        user=callback.from_user,
+        place_id=place_id,
+        maps_url=maps_url,
+        context="single",
+    )
 
     await callback.answer()
     await callback.message.answer(f"🧭 Відкрити на мапі:\n{maps_url}")
+
+    # ПІСЛЯ посилання на мапу — показуємо додаткові кнопки
+    kb_after_map = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✍️ Залишити відгук по цьому місцю", callback_data=f"single_review:{place_id}")],
+        [InlineKeyboardButton(text="✍️ Залишити відгук про цей БОТ", url=REVIEWS_BOT_LINK)],
+        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
+    ])
+
+    await callback.message.answer("Що робимо далі? 👇", reply_markup=kb_after_map)
 
 
 @dp.callback_query(F.data.startswith("single_next:"))
