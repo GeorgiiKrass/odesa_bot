@@ -419,13 +419,13 @@ async def random_recommendation(message: Message) -> None:
     single_last_state[user_id] = {"place_id": place_id, "interesting": False}
 
     # Лог: місце показане користувачу
-    log_feedback_action(
-        action="shown",
-        user=message.from_user,
-        place_id=place_id,
-        maps_url=maps_url,
-        context="single",
-    )
+    await log_feedback_action(
+    action="shown",
+    user=message.from_user,
+    place_id=place_id,
+    maps_url=maps_url,
+    context="single",
+)
 
     caption = f"<b>{p['name']}</b>\n"
     if p.get("rating"):
@@ -517,13 +517,13 @@ async def single_next_callback(callback: types.CallbackQuery) -> None:
     st = single_last_state.get(callback.from_user.id)
     # якщо по цій локації НЕ було "Цікаво" → not_interesting
     if not (st and st.get("place_id") == place_id and st.get("interesting")):
-        log_feedback_action(
-            action="not_interesting",
-            user=callback.from_user,
-            place_id=place_id,
-            maps_url=maps_url,
-            context="single",
-        )
+        await log_feedback_action(
+    action="not_interesting",
+    user=callback.from_user,
+    place_id=place_id,
+    maps_url=maps_url,
+    context="single",
+)
 
     # очищаємо стан і показуємо наступну рекомендацію
     single_last_state.pop(callback.from_user.id, None)
