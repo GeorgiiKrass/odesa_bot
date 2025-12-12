@@ -522,7 +522,6 @@ async def random_recommendation(message: Message) -> None:
 
     # Нижнє повідомлення з підтримкою / відгуком про бот
     btns = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💛 Підтримати проєкт", url=PUMB_URL)],
         [InlineKeyboardButton(text="✍️ Залишити відгук про цей БОТ", url=REVIEWS_BOT_LINK)],
         [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
     ])
@@ -565,44 +564,32 @@ async def single_map_callback(callback: types.CallbackQuery) -> None:
 
 @dp.callback_query(F.data.startswith("single_next:"))
 async def single_next_callback(callback: types.CallbackQuery) -> None:
-    """
-    ➡️ Далі — якщо не було 'Цікаво', вважаємо not_interesting,
-    потім показуємо наступну рекомендацію.
-    """
     _, place_id = callback.data.split(":", 1)
     maps_url = place_url_cache.get(place_id, "")
 
     st = single_last_state.get(callback.from_user.id)
-    # якщо по цій локації НЕ було "Цікаво" → not_interesting
+
+    # якщо не натискав "цікаво" → not_interesting
     if not (st and st.get("place_id") == place_id and st.get("interesting")):
         await log_feedback_action(
-    action="not_interesting",
-    user=callback.from_user,
-    place_id=place_id,
-    maps_url=maps_url,
-    context="single",
-)
+            action="not_interesting",
+            user=callback.from_user,
+            place_id=place_id,
+            maps_url=maps_url,
+            context="single",
+        )
 
-    # очищаємо стан і показуємо наступну рекомендацію
+    # очищаємо стан
     single_last_state.pop(callback.from_user.id, None)
 
     await callback.answer()
-    fake_msg = callback.message
-    # підміняємо from_user, щоб random_recommendation працювала як зі звичайним повідомленням
-    fake_msg.from_user = callback.from_user
-    await random_recommendation(fake_msg)
+    # ✅ показуємо наступну рекомендацію без “підміни message”
+    await send_single_recommendation(callback.message.chat.id, callback.from_user)
 
 
 @dp.callback_query(F.data.startswith("single_review:"))
 async def single_review_callback(callback: types.CallbackQuery) -> None:
-    """
-    Заглушка для майбутніх власних відгуків по цьому місцю.
-    Поки що просто показуємо повідомлення.
-    """
-    await callback.answer(
-        "Скоро тут можна буде залишити свій відгук по цьому місцю 💛",
-        show_alert=True,
-    )
+    await callback.answer("Скоро тут буде відгук у нашу базу 💛", show_alert=True)
 
 
 # --- Меню «Вирушити на прогулянку» ---
