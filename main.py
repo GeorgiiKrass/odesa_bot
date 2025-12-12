@@ -493,13 +493,13 @@ async def single_map_callback(callback: types.CallbackQuery) -> None:
     if st and st.get("place_id") == place_id:
         st["interesting"] = True
 
-    log_feedback_action(
-        action="interesting",
-        user=callback.from_user,
-        place_id=place_id,
-        maps_url=maps_url,
-        context="single",
-    )
+    await log_feedback_action(
+    action="interesting",
+    user=callback.from_user,
+    place_id=place_id,
+    maps_url=maps_url,
+    context="single",
+)
 
     await callback.answer()
     await callback.message.answer(f"🧭 Відкрити на мапі:\n{maps_url}")
