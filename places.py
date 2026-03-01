@@ -12,7 +12,7 @@ CENTER_LON = 30.712481
 INITIAL_RADIUS = 700
 MAX_RADIUS = 700
 
-# Базові типи для рандомних прогулянок
+# Базові типи для випадкових прогулянок
 ALLOWED_TYPES = [
     "art_gallery", "museum", "park", "zoo", "church", "synagogue", "library",
     "movie_theater", "restaurant", "cafe", "tourist_attraction", "amusement_park",
@@ -22,7 +22,7 @@ ALLOWED_TYPES = [
     "fountain", "plaza", "sculpture", "historical_landmark", "campground"
 ]
 
-# Нові тематичні типи
+# Нові тематичні типи для твоїх проектів у HoReCa
 HOTEL_TYPES = ["lodging"]
 GASTRO_TYPES = ["restaurant", "cafe", "bar", "bakery"]
 
@@ -37,7 +37,6 @@ def get_photo_url(photo_reference: str, maxwidth: int = 800) -> str:
 def _place_from_item(item: Dict) -> Dict:
     plat = item["geometry"]["location"]["lat"]
     plon = item["geometry"]["location"]["lng"]
-
     photo = None
     if item.get("photos"):
         photo_ref = item["photos"][0].get("photo_reference")
