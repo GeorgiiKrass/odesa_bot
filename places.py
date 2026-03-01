@@ -1,21 +1,18 @@
 import os
 import random
 from typing import List, Dict, Optional, Tuple, Set
-
 import requests
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-# Центр Одеси (базова точка для маршрутів, якщо не вказано інше)
+# Центр Одеси
 CENTER_LAT = 46.482952
 CENTER_LON = 30.712481
 
-# Радіуси пошуку в метрах
-# Жорстко обмежуємося 700 м між точками
 INITIAL_RADIUS = 700
 MAX_RADIUS = 700
 
-# Типи закладів / місць, які можемо підбирати
+# Базові типи для рандомних прогулянок
 ALLOWED_TYPES = [
     "art_gallery", "museum", "park", "zoo", "church", "synagogue", "library",
     "movie_theater", "restaurant", "cafe", "tourist_attraction", "amusement_park",
@@ -25,11 +22,11 @@ ALLOWED_TYPES = [
     "fountain", "plaza", "sculpture", "historical_landmark", "campground"
 ]
 
+# Нові тематичні типи
+HOTEL_TYPES = ["lodging"]
+GASTRO_TYPES = ["restaurant", "cafe", "bar", "bakery"]
 
 def get_photo_url(photo_reference: str, maxwidth: int = 800) -> str:
-    """
-    Формує URL для отримання фото з Google Places Photo API.
-    """
     if not GOOGLE_API_KEY or not photo_reference:
         return ""
     return (
@@ -37,11 +34,7 @@ def get_photo_url(photo_reference: str, maxwidth: int = 800) -> str:
         f"?maxwidth={maxwidth}&photoreference={photo_reference}&key={GOOGLE_API_KEY}"
     )
 
-
 def _place_from_item(item: Dict) -> Dict:
-    """
-    Витягує потрібну інформацію з елемента Google Places Nearby Search.
-    """
     plat = item["geometry"]["location"]["lat"]
     plon = item["geometry"]["location"]["lng"]
 
@@ -60,9 +53,8 @@ def _place_from_item(item: Dict) -> Dict:
         "reviews": item.get("user_ratings_total", 0),
         "address": item.get("vicinity", "") or item.get("formatted_address", ""),
         "photo": photo,
-        "place_id": item.get("place_id"),  # place_id для відгуків і унікальності
+        "place_id": item.get("place_id"),
     }
-
 
 def get_random_places(
     n: int = 3,
@@ -71,21 +63,10 @@ def get_random_places(
     start_lon: Optional[float] = None,
     excluded_ids: Optional[Set[str]] = None,
 ) -> List[Dict]:
-    """
-    Повертає список з n випадкових локацій.
-    Якщо start_lat/start_lon задані — стартуємо від цих координат,
-    інакше — від центру Одеси.
-
-    Обмеження:
-    - Радіус пошуку 700 м (INITIAL_RADIUS / MAX_RADIUS).
-    - Беремо тільки місця, де є відгуки (user_ratings_total > 0).
-    - Не повертаємо place_id, які в excluded_ids.
-    """
     if not GOOGLE_API_KEY:
         return []
 
     excluded_ids = excluded_ids or set()
-
     types_pool = allowed_types or ALLOWED_TYPES
     all_places: List[Dict] = []
     used_ids = set()
@@ -99,7 +80,6 @@ def get_random_places(
 
     while len(all_places) < n and attempts < 40:
         attempts += 1
-
         choices = list(set(types_pool) - used_types) or types_pool
         t = random.choice(choices)
         used_types.add(t)
@@ -121,23 +101,15 @@ def get_random_places(
         picked = False
         for item in candidates:
             pid = item.get("place_id")
-            if not pid:
+            if not pid or pid in used_ids or pid in excluded_ids:
                 continue
-
-            # ⚠️ фільтр: не показуємо вже використані для цього юзера place_id
-            if pid in used_ids or pid in excluded_ids:
-                continue
-
-            # ⚠️ фільтр: тільки місця з відгуками
             if item.get("user_ratings_total", 0) <= 0:
                 continue
 
             place = _place_from_item(item)
             all_places.append(place)
             used_ids.add(pid)
-
-            current_lat = place["lat"]
-            current_lon = place["lon"]
+            current_lat, current_lon = place["lat"], place["lon"]
             picked = True
             break
 
@@ -146,7 +118,6 @@ def get_random_places(
 
     return all_places[:n]
 
-
 def get_random_place_near(
     lat: float,
     lon: float,
@@ -154,19 +125,10 @@ def get_random_place_near(
     allowed_types: Optional[List[str]] = None,
     excluded_ids: Optional[Set[str]] = None,
 ) -> Optional[Dict]:
-    """
-    Повертає одну випадкову локацію поблизу заданих координат.
-    Використовується у «фірмовому маршруті».
-
-    - Радіус за замовчуванням 700 м.
-    - Беремо тільки місця з відгуками.
-    - Не повертаємо place_id з excluded_ids.
-    """
     if not GOOGLE_API_KEY:
         return None
 
     excluded_ids = excluded_ids or set()
-
     types_pool = allowed_types or ALLOWED_TYPES
     used_types = set()
     attempts = 0
@@ -193,81 +155,35 @@ def get_random_place_near(
 
         for item in candidates:
             pid = item.get("place_id")
-            if not pid:
+            if not pid or pid in excluded_ids:
                 continue
-
-            if pid in excluded_ids:
-                continue
-
             if item.get("user_ratings_total", 0) <= 0:
                 continue
-
             return _place_from_item(item)
-
     return None
 
-
 def get_directions_image_url(places: List[Dict]) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Генерує:
-      • maps_link — посилання на маршрут у Google Maps
-      • static_url — посилання на статичну картинку маршруту (Static Maps API)
-    """
     if not places:
         return None, None
 
+    origin = f"{places[0]['lat']},{places[0]['lon']}"
+    
     if len(places) == 1:
-        p = places[0]
-        origin = f"{p['lat']},{p['lon']}"
         maps_link = f"https://www.google.com/maps/search/?api=1&query={origin}"
-
-        if not GOOGLE_API_KEY:
-            return maps_link, None
-
-        static_url = (
-            "https://maps.googleapis.com/maps/api/staticmap"
-            f"?center={origin}&zoom=15&size=640x400"
-            f"&markers={origin}&key={GOOGLE_API_KEY}"
-        )
+        static_url = f"https://maps.googleapis.com/maps/api/staticmap?center={origin}&zoom=15&size=640x400&markers={origin}&key={GOOGLE_API_KEY}" if GOOGLE_API_KEY else None
         return maps_link, static_url
 
-    if not GOOGLE_API_KEY:
-        origin = f"{places[0]['lat']},{places[0]['lon']}"
-        dest = f"{places[-1]['lat']},{places[-1]['lon']}"
-        wayp = "|".join(f"{p['lat']},{p['lon']}" for p in places[1:-1])
-        maps_link = (
-            "https://www.google.com/maps/dir/?api=1"
-            f"&origin={origin}&destination={dest}&travelmode=walking"
-        )
-        if wayp:
-            maps_link += f"&waypoints={wayp}"
-        return maps_link, None
-
-    base_static = "https://maps.googleapis.com/maps/api/staticmap"
-
-    markers = [
-        f"size:mid|label:{i+1}|{p['lat']},{p['lon']}"
-        for i, p in enumerate(places)
-    ]
-    path = "color:0x0000ff|weight:4|" + "|".join(
-        f"{p['lat']},{p['lon']}" for p in places
-    )
-
-    static_url = (
-        f"{base_static}?size=640x400&"
-        + "&".join(f"markers={m}" for m in markers)
-        + f"&path={path}&key={GOOGLE_API_KEY}"
-    )
-
-    origin = f"{places[0]['lat']},{places[0]['lon']}"
     dest = f"{places[-1]['lat']},{places[-1]['lon']}"
     wayp = "|".join(f"{p['lat']},{p['lon']}" for p in places[1:-1])
+    
+    maps_link = f"https://www.google.com/maps/dir/?api=1&origin={origin}&destination={dest}&travelmode=walking"
+    if wayp: maps_link += f"&waypoints={wayp}"
 
-    maps_link = (
-        "https://www.google.com/maps/dir/?api=1"
-        f"&origin={origin}&destination={dest}&travelmode=walking"
-    )
-    if wayp:
-        maps_link += f"&waypoints={wayp}"
+    if not GOOGLE_API_KEY:
+        return maps_link, None
+
+    markers = [f"size:mid|label:{i+1}|{p['lat']},{p['lon']}" for i, p in enumerate(places)]
+    path = "color:0x0000ff|weight:4|" + "|".join(f"{p['lat']},{p['lon']}" for p in places)
+    static_url = f"https://maps.googleapis.com/maps/api/staticmap?size=640x400&" + "&".join(f"markers={m}" for m in markers) + f"&path={path}&key={GOOGLE_API_KEY}"
 
     return maps_link, static_url
