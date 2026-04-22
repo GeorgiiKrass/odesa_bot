@@ -1,16 +1,19 @@
+import json
 import os
 import random
-from typing import List, Dict, Optional, Tuple, Set
+from typing import Dict, List, Optional, Set
+
 import requests
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+FEEDBACK_FILE = "place_feedback.json"
 
 # Центр Одеси
 CENTER_LAT = 46.482952
 CENTER_LON = 30.712481
 
 INITIAL_RADIUS = 700
-MAX_RADIUS = 700
+MAX_RADIUS = 1000
 
 # Базові типи для випадкових прогулянок
 ALLOWED_TYPES = [
@@ -22,9 +25,48 @@ ALLOWED_TYPES = [
     "fountain", "plaza", "sculpture", "historical_landmark", "campground"
 ]
 
-# Нові тематичні типи для твоїх проектів у HoReCa
 HOTEL_TYPES = ["lodging"]
-GASTRO_TYPES = ["restaurant", "cafe", "bar", "bakery"]
+GASTRO_TYPES = ["restaurant", "cafe", "bar"]
+HISTORICAL_TYPES = ["museum", "tourist_attraction", "church", "synagogue"]
+SHOP_TYPES = ["store", "shopping_mall", "supermarket", "convenience_store", "liquor_store"]
+
+BAD_GASTRO_WORDS = [
+    "магазин", "shop", "store", "market", "маркет", "продукти", "продукты",
+    "пиво", "beer", "алкоголь", "liquor", "wine shop", "mini market", "мінімаркет"
+]
+BAD_HOTEL_WORDS = [
+    "котедж", "коттедж", "cottage", "village", "camp", "base", "база", "кемп",
+    "villa", "вілла", "садиба"
+]
+
+
+def load_place_feedback() -> Dict:
+    try:
+        with open(FEEDBACK_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def get_place_feedback(place_id: Optional[str]) -> Dict:
+    if not place_id:
+        return {}
+    data = load_place_feedback()
+    return data.get(place_id, {})
+
+
+def _top_vote(votes: Dict[str, int]) -> Optional[str]:
+    if not votes:
+        return None
+    return max(votes.items(), key=lambda x: x[1])[0]
+
+
+def get_place_decision(place_id: Optional[str]) -> Optional[str]:
+    if not place_id:
+        return None
+    record = get_place_feedback(place_id)
+    return _top_vote(record.get("votes", {}))
+
 
 def get_photo_url(photo_reference: str, maxwidth: int = 800) -> str:
     if not GOOGLE_API_KEY or not photo_reference:
@@ -33,6 +75,7 @@ def get_photo_url(photo_reference: str, maxwidth: int = 800) -> str:
         "https://maps.googleapis.com/maps/api/place/photo"
         f"?maxwidth={maxwidth}&photoreference={photo_reference}&key={GOOGLE_API_KEY}"
     )
+
 
 def _place_from_item(item: Dict) -> Dict:
     plat = item["geometry"]["location"]["lat"]
@@ -53,7 +96,51 @@ def _place_from_item(item: Dict) -> Dict:
         "address": item.get("vicinity", "") or item.get("formatted_address", ""),
         "photo": photo,
         "place_id": item.get("place_id"),
+        "raw_types": item.get("types", []),
     }
+
+
+def _contains_bad_word(name: str, words: List[str]) -> bool:
+    low = (name or "").lower()
+    return any(word in low for word in words)
+
+
+def is_place_allowed(item: Dict, section: Optional[str] = None) -> bool:
+    pid = item.get("place_id")
+    decision = get_place_decision(pid)
+    name = item.get("name", "")
+
+    if decision in {"wrong", "closed"}:
+        return False
+
+    if section == "gastro":
+        if decision in {"shop", "wrong", "closed"}:
+            return False
+        if _contains_bad_word(name, BAD_GASTRO_WORDS):
+            return False
+        if item.get("rating", 0) and item.get("rating", 0) < 4.0:
+            return False
+        if item.get("user_ratings_total", 0) < 15:
+            return False
+
+    if section == "hotels":
+        if decision in {"cottage", "wrong", "closed"}:
+            return False
+        if _contains_bad_word(name, BAD_HOTEL_WORDS):
+            return False
+        if item.get("user_ratings_total", 0) < 5:
+            return False
+
+    if section == "history":
+        if decision in {"wrong", "closed"}:
+            return False
+
+    if section == "shop":
+        if decision in {"wrong", "closed"}:
+            return False
+
+    return True
+
 
 def get_random_places(
     n: int = 3,
@@ -61,6 +148,7 @@ def get_random_places(
     start_lat: Optional[float] = None,
     start_lon: Optional[float] = None,
     excluded_ids: Optional[Set[str]] = None,
+    section: Optional[str] = None,
 ) -> List[Dict]:
     if not GOOGLE_API_KEY:
         return []
@@ -77,7 +165,7 @@ def get_random_places(
     current_lat, current_lon, radius = base_lat, base_lon, INITIAL_RADIUS
     attempts = 0
 
-    while len(all_places) < n and attempts < 40:
+    while len(all_places) < n and attempts < 50:
         attempts += 1
         choices = list(set(types_pool) - used_types) or types_pool
         t = random.choice(choices)
@@ -104,6 +192,8 @@ def get_random_places(
                 continue
             if item.get("user_ratings_total", 0) <= 0:
                 continue
+            if not is_place_allowed(item, section=section):
+                continue
 
             place = _place_from_item(item)
             all_places.append(place)
@@ -117,12 +207,14 @@ def get_random_places(
 
     return all_places[:n]
 
+
 def get_random_place_near(
     lat: float,
     lon: float,
     radius: int = 700,
     allowed_types: Optional[List[str]] = None,
     excluded_ids: Optional[Set[str]] = None,
+    section: Optional[str] = None,
 ) -> Optional[Dict]:
     if not GOOGLE_API_KEY:
         return None
@@ -132,7 +224,7 @@ def get_random_place_near(
     used_types = set()
     attempts = 0
 
-    while attempts < 30:
+    while attempts < 40:
         attempts += 1
         choices = list(set(types_pool) - used_types) or types_pool
         t = random.choice(choices)
@@ -158,31 +250,7 @@ def get_random_place_near(
                 continue
             if item.get("user_ratings_total", 0) <= 0:
                 continue
+            if not is_place_allowed(item, section=section):
+                continue
             return _place_from_item(item)
     return None
-
-def get_directions_image_url(places: List[Dict]) -> Tuple[Optional[str], Optional[str]]:
-    if not places:
-        return None, None
-
-    origin = f"{places[0]['lat']},{places[0]['lon']}"
-    
-    if len(places) == 1:
-        maps_link = f"https://www.google.com/maps/search/?api=1&query={origin}"
-        static_url = f"https://maps.googleapis.com/maps/api/staticmap?center={origin}&zoom=15&size=640x400&markers={origin}&key={GOOGLE_API_KEY}" if GOOGLE_API_KEY else None
-        return maps_link, static_url
-
-    dest = f"{places[-1]['lat']},{places[-1]['lon']}"
-    wayp = "|".join(f"{p['lat']},{p['lon']}" for p in places[1:-1])
-    
-    maps_link = f"https://www.google.com/maps/dir/?api=1&origin={origin}&destination={dest}&travelmode=walking"
-    if wayp: maps_link += f"&waypoints={wayp}"
-
-    if not GOOGLE_API_KEY:
-        return maps_link, None
-
-    markers = [f"size:mid|label:{i+1}|{p['lat']},{p['lon']}" for i, p in enumerate(places)]
-    path = "color:0x0000ff|weight:4|" + "|".join(f"{p['lat']},{p['lon']}" for p in places)
-    static_url = f"https://maps.googleapis.com/maps/api/staticmap?size=640x400&" + "&".join(f"markers={m}" for m in markers) + f"&path={path}&key={GOOGLE_API_KEY}"
-
-    return maps_link, static_url
