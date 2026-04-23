@@ -176,6 +176,16 @@ def save_saved_place_to_sheets(user_id: int, place_id: str):
     ])
 
 
+def save_shown_place_to_sheets(user_id: int, place: dict):
+    gs_append_row("shown_places", [
+        datetime.now(ODESSA_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+        user_id,
+        place.get("place_id", ""),
+        place.get("name", ""),
+        place.get("address", "")
+    ])
+
+
 def save_user(user_id: int) -> None:
     try:
         with open(USERS_FILE, "r", encoding="utf-8") as f:
@@ -388,6 +398,9 @@ async def send_place_card(message: Message, place: dict, index: int | None = Non
         await message.answer_photo(place["photo"], caption=caption, reply_markup=kb)
     else:
         await message.answer(caption, reply_markup=kb)
+
+    if place.get("place_id"):
+        save_shown_place_to_sheets(message.from_user.id, place)
 
 
 @dp.message(F.text == "/start")
