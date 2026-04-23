@@ -429,7 +429,6 @@ async def share_bot(message: Message):
         "url": BOT_LINK,
         text = quote("🔥 Крутий бот для прогулянок по Одесі 👇")
     }
-
     share_url = f"https://t.me/share/url?{urlencode(params)}"
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
