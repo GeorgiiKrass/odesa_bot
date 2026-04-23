@@ -351,7 +351,7 @@ def build_place_keyboard(place: dict, section: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="👎", callback_data=f"vote:dislike:{place_id}")
         ])
         buttons.append([
-            InlineKeyboardButton(text="❤️ Зберегти", callback_data=f"save:{place_id}")
+            InlineKeyboardButton(text="❤️ Зберегти", callback_data=f"save:{place_id}"),
             InlineKeyboardButton(text="❌ Видалити", callback_data=f"remove:{place['place_id']}")
         ])
         buttons.append([
