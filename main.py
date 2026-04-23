@@ -421,7 +421,7 @@ async def start_handler(message: Message):
     await message.answer("Привіт! Я — бот <b>«Одеса Навмання»</b> 🧭\nОбирай режим 👇", reply_markup=kb)
 
 
-from urllib.parse import urlencode
+from urllib.parse import quote
 
 @dp.message(F.text == "📤 Поділитися ботом")
 async def share_bot(message: Message):
