@@ -379,13 +379,17 @@ def build_route_end_keyboard() -> InlineKeyboardMarkup:
 
 
 def feedback_rating_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="⭐", callback_data="botrate:1"),
-        InlineKeyboardButton(text="⭐⭐", callback_data="botrate:2"),
-        InlineKeyboardButton(text="⭐⭐⭐", callback_data="botrate:3"),
-        InlineKeyboardButton(text="⭐⭐⭐⭐", callback_data="botrate:4"),
-        InlineKeyboardButton(text="⭐⭐⭐⭐⭐", callback_data="botrate:5"),
-    ]])
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="⭐", callback_data="botrate:1"),
+            InlineKeyboardButton(text="⭐⭐", callback_data="botrate:2"),
+            InlineKeyboardButton(text="⭐⭐⭐", callback_data="botrate:3"),
+        ],
+        [
+            InlineKeyboardButton(text="⭐⭐⭐⭐", callback_data="botrate:4"),
+            InlineKeyboardButton(text="⭐⭐⭐⭐⭐", callback_data="botrate:5"),
+        ]
+    ])
 
 
 async def send_place_card(message: Message, place: dict, index: int | None = None, section: str = "random"):
@@ -423,20 +427,19 @@ async def start_handler(message: Message):
 
 from urllib.parse import quote
 
+from urllib.parse import quote
+
 @dp.message(F.text == "📤 Поділитися ботом")
 async def share_bot(message: Message):
-    params = {
-        "url": BOT_LINK,
-        text = quote("🔥 Крутий бот для прогулянок по Одесі 👇")
-    }
-    share_url = f"https://t.me/share/url?{urlencode(params)}"
+    text = quote("🔥 Крутий бот для прогулянок по Одесі 👇")
+
+    share_url = f"https://t.me/share/url?url={BOT_LINK}&text={text}"
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📤 Поділитися", url=share_url)]
     ])
 
     await message.answer("Поділись ботом з друзями 👇", reply_markup=kb)
-
 
 @dp.message(F.text == "🚶‍♂️ Вирушити на прогулянку")
 async def walk_menu(message: Message):
