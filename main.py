@@ -5,6 +5,9 @@ from math import radians, sin, cos, asin, sqrt
 from datetime import datetime
 
 import pytz
+import gspread
+from google.oauth2.service_account import Credentials
+
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton,
@@ -30,19 +33,25 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 MY_ID = int(os.getenv("MY_ID", "909231739"))
 
-PUMB_URL = "https://mobile-app.pumb.ua/VDdaNY9UzYmaK4fj8"
+PUMB_URL = os.getenv("PUMB_DONATE_URL", "https://mobile-app.pumb.ua/VDdaNY9UzYmaK4fj8")
 USERS_FILE = "users.json"
 VISITED_FILE = "visited.json"
 LIMITS_FILE = "limits.json"
 FEEDBACK_FILE = "place_feedback.json"
+SAVED_FILE = "saved_places.json"
+
+SPREADSHEET_NAME = os.getenv("GOOGLE_SHEETS_SPREADSHEET")
+CREDS_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+
+INSTAGRAM_URL = os.getenv("INSTAGRAM_URL", "https://www.instagram.com/odesa_navmannya")
+BOT_LINK = os.getenv("BOT_LINK", "https://t.me/odesanavmannya_bot")
 
 DAILY_WALKS_LIMIT = 3
 DAILY_RECS_LIMIT = 5
 
-REVIEWS_BOT_LINK = "https://g.page/r/CYKKZ6sJyKz0EAE/review"
 ODESSA_TZ = pytz.timezone("Europe/Kyiv")
 
-for file in [VISITED_FILE, LIMITS_FILE, USERS_FILE, FEEDBACK_FILE]:
+for file in [VISITED_FILE, LIMITS_FILE, USERS_FILE, FEEDBACK_FILE, SAVED_FILE]:
     if not os.path.exists(file):
         with open(file, "w", encoding="utf-8") as f:
             default_value = [] if file == USERS_FILE else {}
@@ -51,7 +60,27 @@ for file in [VISITED_FILE, LIMITS_FILE, USERS_FILE, FEEDBACK_FILE]:
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
+# --- Google Sheets ---
+gs_client = None
+if CREDS_JSON and SPREADSHEET_NAME:
+    try:
+        creds_dict = json.loads(CREDS_JSON)
+        creds = Credentials.from_service_account_info(
+            creds_dict,
+            scopes=[
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+        )
+        gs_client = gspread.authorize(creds)
+        print("Google Sheets connected")
+    except Exception as e:
+        print("Google Sheets ERROR:", e)
+else:
+    print("Google Sheets disabled: missing GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SHEETS_SPREADSHEET")
+
 user_route_state: dict[int, dict] = {}
+user_feedback_state: dict[int, dict] = {}
 
 SECTION_LABELS = {
     "gastro": "гастро",
@@ -96,6 +125,55 @@ FEEDBACK_OPTIONS = {
         ("🚫 Не працює", "closed"),
     ],
 }
+
+
+def gs_append_row(worksheet_name: str, row: list):
+    if not gs_client or not SPREADSHEET_NAME:
+        return
+    try:
+        sheet = gs_client.open(SPREADSHEET_NAME).worksheet(worksheet_name)
+        sheet.append_row(row)
+    except Exception as e:
+        print(f"GS append error [{worksheet_name}]:", e)
+
+
+def save_user_to_sheets(user):
+    gs_append_row("users", [
+        user.id,
+        user.username or "",
+        user.first_name or "",
+        datetime.now(ODESSA_TZ).strftime("%Y-%m-%d %H:%M:%S")
+    ])
+
+
+def save_place_feedback_to_sheets(user_id: int, section: str, place_id: str, place_name: str, feedback: str):
+    gs_append_row("place_feedback", [
+        datetime.now(ODESSA_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+        user_id,
+        section,
+        place_id,
+        place_name,
+        feedback
+    ])
+
+
+def save_bot_feedback_to_sheets(user, rating: int, text: str, photo_url: str):
+    gs_append_row("bot_feedback", [
+        datetime.now(ODESSA_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+        user.id,
+        user.username or "",
+        rating,
+        text,
+        photo_url
+    ])
+
+
+def save_saved_place_to_sheets(user_id: int, place_id: str):
+    gs_append_row("saved_places", [
+        user_id,
+        place_id,
+        datetime.now(ODESSA_TZ).strftime("%Y-%m-%d %H:%M:%S")
+    ])
 
 
 def save_user(user_id: int) -> None:
@@ -171,7 +249,7 @@ def distance_m(lat1, lon1, lat2, lon2):
     phi1, phi2 = radians(lat1), radians(lat2)
     dphi, dlambda = radians(lat2 - lat1), radians(lon2 - lon1)
     a = sin(dphi / 2) ** 2 + cos(phi1) * cos(phi2) * sin(dlambda / 2) ** 2
-    return r * 2 * asin(sqrt(a))
+    return r * 2 * asin((a ** 0.5))
 
 
 def load_place_feedback() -> dict:
@@ -217,6 +295,32 @@ def add_place_feedback(place_id: str, section: str, value: str, user_id: int, pl
     rec["votes"][value] = rec["votes"].get(value, 0) + 1
     rec["updated_at"] = datetime.now(ODESSA_TZ).isoformat()
     save_place_feedback(data)
+    save_place_feedback_to_sheets(user_id, section, place_id, rec.get("place_name", ""), value)
+
+
+def load_saved(user_id: int):
+    try:
+        with open(SAVED_FILE, "r", encoding="utf-8") as f:
+            return json.load(f).get(str(user_id), [])
+    except Exception:
+        return []
+
+
+def save_place_for_user(user_id: int, place_id: str):
+    try:
+        with open(SAVED_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        data = {}
+
+    user_data = data.setdefault(str(user_id), [])
+    if place_id not in user_data:
+        user_data.append(place_id)
+
+    with open(SAVED_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+    save_saved_place_to_sheets(user_id, place_id)
 
 
 def build_feedback_prompt_keyboard(place_id: str, section: str) -> InlineKeyboardMarkup:
@@ -228,15 +332,47 @@ def build_feedback_prompt_keyboard(place_id: str, section: str) -> InlineKeyboar
 
 
 def build_place_keyboard(place: dict, section: str) -> InlineKeyboardMarkup:
+    place_id = place.get("place_id", "")
     buttons = [[InlineKeyboardButton(text="🗺 На мапі", url=place["url"])]]
-    if place.get("place_id"):
+
+    if place_id:
+        buttons.append([
+            InlineKeyboardButton(text="👍", callback_data=f"vote:like:{place_id}"),
+            InlineKeyboardButton(text="👎", callback_data=f"vote:dislike:{place_id}")
+        ])
+        buttons.append([
+            InlineKeyboardButton(text="❤️ Зберегти", callback_data=f"save:{place_id}")
+        ])
         buttons.append([
             InlineKeyboardButton(
                 text="🛠 Зробіть нас краще",
-                callback_data=f"rate:{section}:{place['place_id']}"
+                callback_data=f"rate:{section}:{place_id}"
             )
         ])
+
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def build_route_end_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💛 Підтримати", url=PUMB_URL)],
+        [
+            InlineKeyboardButton(text="📤 Поділитися ботом", url=BOT_LINK),
+            InlineKeyboardButton(text="📸 Instagram", url=INSTAGRAM_URL),
+        ],
+        [InlineKeyboardButton(text="✍️ Відгук про бот", callback_data="leave_feedback")],
+        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
+    ])
+
+
+def feedback_rating_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="⭐", callback_data="botrate:1"),
+        InlineKeyboardButton(text="⭐⭐", callback_data="botrate:2"),
+        InlineKeyboardButton(text="⭐⭐⭐", callback_data="botrate:3"),
+        InlineKeyboardButton(text="⭐⭐⭐⭐", callback_data="botrate:4"),
+        InlineKeyboardButton(text="⭐⭐⭐⭐⭐", callback_data="botrate:5"),
+    ]])
 
 
 async def send_place_card(message: Message, place: dict, index: int | None = None, section: str = "random"):
@@ -257,12 +393,26 @@ async def send_place_card(message: Message, place: dict, index: int | None = Non
 @dp.message(F.text == "/start")
 async def start_handler(message: Message):
     save_user(message.from_user.id)
+    save_user_to_sheets(message.from_user)
+
     kb = ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[
         [KeyboardButton(text="🎲 Випадкова рекомендація")],
         [KeyboardButton(text="🚶‍♂️ Вирушити на прогулянку")],
+        [KeyboardButton(text="✍️ Відгук про бот")],
+        [KeyboardButton(text="📤 Поділитися ботом")],
         [KeyboardButton(text="ℹ️ Як працює бот?")],
     ])
     await message.answer("Привіт! Я — бот <b>«Одеса Навмання»</b> 🧭\nОбирай режим 👇", reply_markup=kb)
+
+
+@dp.message(F.text == "📤 Поділитися ботом")
+async def share_bot(message: Message):
+    await message.answer(
+        "Поділись ботом з друзями 👇",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔗 Поділитися", url=BOT_LINK)]
+        ])
+    )
 
 
 @dp.message(F.text == "🚶‍♂️ Вирушити на прогулянку")
@@ -383,12 +533,7 @@ async def send_route(message: Message, count: int, start_lat=None, start_lon=Non
     add_visited(user_id, [p["place_id"] for p in places if p.get("place_id")])
     inc_limit(user_id, "walks")
 
-    btns = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💛 Підтримати", url=PUMB_URL)],
-        [InlineKeyboardButton(text="✍️ Відгук про бот", url=REVIEWS_BOT_LINK)],
-        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
-    ])
-    await message.answer("Як вам прогулянка? 😉", reply_markup=btns)
+    await message.answer("Як вам прогулянка? 😉", reply_markup=build_route_end_keyboard())
 
 
 async def start_firm_route(message: Message, start_lat=None, start_lon=None):
@@ -440,12 +585,7 @@ async def start_firm_route(message: Message, start_lat=None, start_lon=None):
     await send_place_card(message, third, 3, section="gastro")
 
     inc_limit(user_id, "walks")
-    btns = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💛 Підтримати", url=PUMB_URL)],
-        [InlineKeyboardButton(text="✍️ Відгук про бот", url=REVIEWS_BOT_LINK)],
-        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_menu")],
-    ])
-    await message.answer("Фірмовий маршрут готовий ✨", reply_markup=btns)
+    await message.answer("Фірмовий маршрут готовий ✨", reply_markup=build_route_end_keyboard())
 
 
 @dp.message(F.text == "🎲 Випадкова рекомендація")
@@ -460,6 +600,20 @@ async def random_recs(message: Message):
     inc_limit(message.from_user.id, "recs")
     add_visited(message.from_user.id, [place.get("place_id")])
     await send_place_card(message, place, section="random")
+
+
+@dp.callback_query(F.data.startswith("vote:"))
+async def handle_vote(callback: types.CallbackQuery):
+    _, vote_type, place_id = callback.data.split(":")
+    add_place_feedback(place_id, "rating", vote_type, callback.from_user.id)
+    await callback.answer("Збережено 👍")
+
+
+@dp.callback_query(F.data.startswith("save:"))
+async def save_place_handler(callback: types.CallbackQuery):
+    place_id = callback.data.split(":")[1]
+    save_place_for_user(callback.from_user.id, place_id)
+    await callback.answer("Збережено ❤️")
 
 
 @dp.callback_query(F.data.startswith("rate:"))
@@ -484,9 +638,6 @@ async def save_feedback_callback(callback: types.CallbackQuery):
     except ValueError:
         return await callback.answer("Помилка", show_alert=True)
 
-    if value == "":
-        return await callback.answer("Помилка", show_alert=True)
-
     data = load_place_feedback()
     place_name = data.get(place_id, {}).get("place_name", "")
     add_place_feedback(place_id, section, value, callback.from_user.id, place_name=place_name)
@@ -499,6 +650,30 @@ async def save_feedback_callback(callback: types.CallbackQuery):
 async def close_feedback(callback: types.CallbackQuery):
     await callback.answer()
     await callback.message.edit_reply_markup(reply_markup=None)
+
+
+@dp.message(F.text == "✍️ Відгук про бот")
+async def feedback_start(message: Message):
+    user_feedback_state[message.from_user.id] = {"step": "rating"}
+    await message.answer("Оцініть бота ⭐", reply_markup=feedback_rating_keyboard())
+
+
+@dp.callback_query(F.data == "leave_feedback")
+async def leave_feedback(callback: types.CallbackQuery):
+    user_feedback_state[callback.from_user.id] = {"step": "rating"}
+    await callback.message.answer("Оцініть бота ⭐", reply_markup=feedback_rating_keyboard())
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("botrate:"))
+async def bot_rating(callback: types.CallbackQuery):
+    rating = int(callback.data.split(":")[1])
+    user_feedback_state[callback.from_user.id] = {
+        "step": "text",
+        "rating": rating
+    }
+    await callback.message.answer("Напишіть відгук або додайте фото 📸")
+    await callback.answer()
 
 
 @dp.callback_query(F.data == "back_to_menu")
@@ -516,12 +691,36 @@ async def back(message: Message):
 async def how(message: Message):
     await message.answer(
         "Обирай режим, а я підберу місця Одесою 🧭\n"
-        "Після кожної точки можна натиснути «Зробіть нас краще» і допомогти очистити базу."
+        "Після кожної точки можна оцінити місце, зберегти його або допомогти очистити базу."
     )
+
+
+@dp.message()
+async def handle_feedback_message(message: Message):
+    state = user_feedback_state.get(message.from_user.id)
+    if not state:
+        return
+
+    if state.get("step") != "text":
+        return
+
+    text = message.text or message.caption or ""
+    photo_url = ""
+
+    if message.photo:
+        photo = message.photo[-1]
+        file = await bot.get_file(photo.file_id)
+        photo_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file.file_path}"
+
+    save_bot_feedback_to_sheets(message.from_user, state["rating"], text, photo_url)
+
+    user_feedback_state.pop(message.from_user.id, None)
+    await message.answer("Дякуємо 💛")
 
 
 async def main():
     await bot.delete_webhook(drop_pending_updates=True)
+    await asyncio.sleep(1)
     await dp.start_polling(bot)
 
 
