@@ -404,7 +404,7 @@ async def send_place_card(message: Message, place: dict, index: int | None = Non
 
     if place.get("place_id"):
         save_shown_place_to_sheets(message.from_user.id, place)
-
+InlineKeyboardButton(text="❌ Видалити", callback_data=f"remove:{place['place_id']}")
 
 @dp.message(F.text == "/start")
 async def start_handler(message: Message):
@@ -417,6 +417,7 @@ async def start_handler(message: Message):
         [KeyboardButton(text="✍️ Відгук про бот")],
         [KeyboardButton(text="📤 Поділитися ботом")],
         [KeyboardButton(text="ℹ️ Як працює бот?")],
+        [KeyboardButton(text="📍 Мої місця")],
     ])
     await message.answer("Привіт! Я — бот <b>«Одеса Навмання»</b> 🧭\nОбирай режим 👇", reply_markup=kb)
 
@@ -735,7 +736,77 @@ async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     await asyncio.sleep(1)
     await dp.start_polling(bot)
+# =========================
+# 🔥 МОЇ МІСЦЯ (АПГРЕЙД)
+# =========================
 
+@dp.message(F.text == "📍 Мої місця")
+async def my_places(message: Message):
+    saved_ids = load_saved(message.from_user.id)
+
+    if not saved_ids:
+        return await message.answer("У вас ще немає збережених місць 😌")
+
+    await message.answer("🔖 Ваші збережені місця:")
+
+    # беремо багато місць, щоб знайти всі збережені
+    all_places = get_random_places(200)
+
+    saved_places = [p for p in all_places if p.get("place_id") in saved_ids]
+
+    if not saved_places:
+        return await message.answer("Не вдалося знайти місця 😞")
+
+    for place in saved_places[:10]:
+        await send_place_card(message, place, section="saved")
+
+    await message.answer(
+        "Хочеш побудувати маршрут з них?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🚶‍♂️ Побудувати маршрут", callback_data="route_saved")]
+        ])
+    )
+
+
+@dp.callback_query(F.data == "route_saved")
+async def route_saved(callback: types.CallbackQuery):
+    saved_ids = load_saved(callback.from_user.id)
+
+    all_places = get_random_places(200)
+    saved_places = [p for p in all_places if p.get("place_id") in saved_ids]
+
+    if not saved_places:
+        return await callback.answer("Немає місць")
+
+    for i, place in enumerate(saved_places[:3], 1):
+        await send_place_card(callback.message, place, i, section="saved")
+
+    await callback.answer()
+
+
+def remove_place(user_id, place_id):
+    try:
+        with open(SAVED_FILE, "r") as f:
+            data = json.load(f)
+    except:
+        return
+
+    user_data = data.get(str(user_id), [])
+
+    if place_id in user_data:
+        user_data.remove(place_id)
+
+    data[str(user_id)] = user_data
+
+    with open(SAVED_FILE, "w") as f:
+        json.dump(data, f)
+
+
+@dp.callback_query(F.data.startswith("remove:"))
+async def remove_handler(callback: types.CallbackQuery):
+    place_id = callback.data.split(":")[1]
+    remove_place(callback.from_user.id, place_id)
+    await callback.answer("Видалено ❌")
 
 if __name__ == "__main__":
     asyncio.run(main())
