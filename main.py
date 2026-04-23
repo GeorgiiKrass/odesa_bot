@@ -427,7 +427,7 @@ from urllib.parse import quote
 async def share_bot(message: Message):
     params = {
         "url": BOT_LINK,
-        "text": "🔥 Спробуй цей бот для прогулянок по Одесі"
+        text = quote("🔥 Крутий бот для прогулянок по Одесі 👇")
     }
 
     share_url = f"https://t.me/share/url?{urlencode(params)}"
