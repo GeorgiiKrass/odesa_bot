@@ -39,6 +39,7 @@ VISITED_FILE = "visited.json"
 LIMITS_FILE = "limits.json"
 FEEDBACK_FILE = "place_feedback.json"
 SAVED_FILE = "saved_places.json"
+LAST_SHOWN_FILE = "last_shown_places.json"
 
 SPREADSHEET_NAME = os.getenv("GOOGLE_SHEETS_SPREADSHEET")
 CREDS_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
@@ -51,7 +52,7 @@ DAILY_RECS_LIMIT = 5
 
 ODESSA_TZ = pytz.timezone("Europe/Kyiv")
 
-for file in [VISITED_FILE, LIMITS_FILE, USERS_FILE, FEEDBACK_FILE, SAVED_FILE]:
+for file in [VISITED_FILE, LIMITS_FILE, USERS_FILE, FEEDBACK_FILE, SAVED_FILE, LAST_SHOWN_FILE]:
     if not os.path.exists(file):
         with open(file, "w", encoding="utf-8") as f:
             default_value = [] if file == USERS_FILE else {}
@@ -186,6 +187,53 @@ def save_shown_place_to_sheets(user_id: int, place: dict):
     ])
 
 
+def remember_last_shown_place(user_id: int, place: dict):
+    try:
+        with open(LAST_SHOWN_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        data = {}
+
+    user_places = data.setdefault(str(user_id), {})
+    place_id = place.get("place_id")
+    if place_id:
+        user_places[place_id] = place
+
+    with open(LAST_SHOWN_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def get_last_shown_place(user_id: int, place_id: str):
+    try:
+        with open(LAST_SHOWN_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return None
+
+    return data.get(str(user_id), {}).get(place_id)
+
+
+def load_saved_places(user_id: int):
+    try:
+        with open(SAVED_FILE, "r", encoding="utf-8") as f:
+            raw = json.load(f).get(str(user_id), [])
+    except Exception:
+        return []
+
+    if not raw:
+        return []
+
+    if isinstance(raw[0], str):
+        places = []
+        for pid in raw:
+            place = get_last_shown_place(user_id, pid)
+            if place:
+                places.append(place)
+        return places
+
+    return raw
+
+
 def save_user(user_id: int) -> None:
     try:
         with open(USERS_FILE, "r", encoding="utf-8") as f:
@@ -316,7 +364,7 @@ def load_saved(user_id: int):
         return []
 
 
-def save_place_for_user(user_id: int, place_id: str):
+def save_place_for_user(user_id: int, place: dict):
     try:
         with open(SAVED_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -324,8 +372,11 @@ def save_place_for_user(user_id: int, place_id: str):
         data = {}
 
     user_data = data.setdefault(str(user_id), [])
-    if place_id not in user_data:
-        user_data.append(place_id)
+    place_id = place.get("place_id", "")
+    existing_ids = [p.get("place_id") for p in user_data if isinstance(p, dict)]
+
+    if place_id and place_id not in existing_ids:
+        user_data.append(place)
 
     with open(SAVED_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -405,6 +456,7 @@ async def send_place_card(message: Message, place: dict, index: int | None = Non
 
     if place.get("place_id"):
         save_shown_place_to_sheets(message.from_user.id, place)
+        remember_last_shown_place(message.from_user.id, place)
 
 @dp.message(F.text == "/start")
 async def start_handler(message: Message):
@@ -624,16 +676,16 @@ async def handle_vote(callback: types.CallbackQuery):
 
 
 @dp.callback_query(F.data.startswith("save:"))
-users = load_users()
+async def save_place_handler(callback: types.CallbackQuery):
+    place_id = callback.data.split(":")[1]
+    place = get_last_shown_place(callback.from_user.id, place_id)
 
-user = users.setdefault(str(callback.from_user.id), {})
-saved = user.setdefault("saved", [])
+    if not place:
+        await callback.answer("Спочатку відкрий місце ще раз 🙌", show_alert=True)
+        return
 
-if place_id not in saved:
-    saved.append(place_id)
-
-save_users(users)
-
+    save_place_for_user(callback.from_user.id, place)
+    await callback.answer("Збережено ❤️")
 
 @dp.callback_query(F.data.startswith("rate:"))
 async def rate_place(callback: types.CallbackQuery):
@@ -746,21 +798,31 @@ async def main():
 # =========================
 
 @dp.message(F.text == "📍 Мої місця")
-users = load_users()
-user = users.get(str(message.from_user.id), {})
-saved_ids = user.get("saved", [])
+async def my_places(message: Message):
+    saved_places = load_saved_places(message.from_user.id)
+
+    if not saved_places:
+        return await message.answer("У вас ще немає збережених місць 😌")
+
+    await message.answer("🔖 Ваші збережені місця:")
+
+    for place in saved_places[:10]:
+        await send_place_card(message, place, section="saved")
+
+    await message.answer(
+        "Хочеш побудувати маршрут з них?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🚶‍♂️ Побудувати маршрут", callback_data="route_saved")]
+        ])
+    )
 
 
 @dp.callback_query(F.data == "route_saved")
 async def route_saved(callback: types.CallbackQuery):
-    saved_ids = load_saved(callback.from_user.id)
-
-    all_places = get_random_places(1000)
-    places_map = {p["place_id"]: p for p in all_places if p.get("place_id")}
-    saved_places = [places_map[pid] for pid in saved_ids if pid in places_map]
+    saved_places = load_saved_places(callback.from_user.id)
 
     if not saved_places:
-        return await callback.answer("Немає місць")
+        return await callback.answer("Немає місць", show_alert=True)
 
     for i, place in enumerate(saved_places[:3], 1):
         await send_place_card(callback.message, place, i, section="saved")
@@ -770,20 +832,18 @@ async def route_saved(callback: types.CallbackQuery):
 
 def remove_place(user_id, place_id):
     try:
-        with open(SAVED_FILE, "r") as f:
+        with open(SAVED_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-    except:
+    except Exception:
         return
 
     user_data = data.get(str(user_id), [])
-
-    if place_id in user_data:
-        user_data.remove(place_id)
-
+    user_data = [p for p in user_data if not (isinstance(p, dict) and p.get("place_id") == place_id)]
+    user_data = [p for p in user_data if p != place_id]
     data[str(user_id)] = user_data
 
-    with open(SAVED_FILE, "w") as f:
-        json.dump(data, f)
+    with open(SAVED_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 @dp.callback_query(F.data.startswith("remove:"))
