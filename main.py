@@ -39,7 +39,6 @@ VISITED_FILE = "visited.json"
 LIMITS_FILE = "limits.json"
 FEEDBACK_FILE = "place_feedback.json"
 SAVED_FILE = "saved_places.json"
-LAST_SHOWN_FILE = "last_shown_places.json"
 
 SPREADSHEET_NAME = os.getenv("GOOGLE_SHEETS_SPREADSHEET")
 CREDS_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
@@ -52,7 +51,7 @@ DAILY_RECS_LIMIT = 5
 
 ODESSA_TZ = pytz.timezone("Europe/Kyiv")
 
-for file in [VISITED_FILE, LIMITS_FILE, USERS_FILE, FEEDBACK_FILE, SAVED_FILE, LAST_SHOWN_FILE]:
+for file in [VISITED_FILE, LIMITS_FILE, USERS_FILE, FEEDBACK_FILE, SAVED_FILE]:
     if not os.path.exists(file):
         with open(file, "w", encoding="utf-8") as f:
             default_value = [] if file == USERS_FILE else {}
@@ -175,63 +174,6 @@ def save_saved_place_to_sheets(user_id: int, place_id: str):
         place_id,
         datetime.now(ODESSA_TZ).strftime("%Y-%m-%d %H:%M:%S")
     ])
-
-
-def save_shown_place_to_sheets(user_id: int, place: dict):
-    gs_append_row("shown_places", [
-        datetime.now(ODESSA_TZ).strftime("%Y-%m-%d %H:%M:%S"),
-        user_id,
-        place.get("place_id", ""),
-        place.get("name", ""),
-        place.get("address", "")
-    ])
-
-
-def remember_last_shown_place(user_id: int, place: dict):
-    try:
-        with open(LAST_SHOWN_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        data = {}
-
-    user_places = data.setdefault(str(user_id), {})
-    place_id = place.get("place_id")
-    if place_id:
-        user_places[place_id] = place
-
-    with open(LAST_SHOWN_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-
-def get_last_shown_place(user_id: int, place_id: str):
-    try:
-        with open(LAST_SHOWN_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        return None
-
-    return data.get(str(user_id), {}).get(place_id)
-
-
-def load_saved_places(user_id: int):
-    try:
-        with open(SAVED_FILE, "r", encoding="utf-8") as f:
-            raw = json.load(f).get(str(user_id), [])
-    except Exception:
-        return []
-
-    if not raw:
-        return []
-
-    if isinstance(raw[0], str):
-        places = []
-        for pid in raw:
-            place = get_last_shown_place(user_id, pid)
-            if place:
-                places.append(place)
-        return places
-
-    return raw
 
 
 def save_user(user_id: int) -> None:
@@ -364,7 +306,7 @@ def load_saved(user_id: int):
         return []
 
 
-def save_place_for_user(user_id: int, place: dict):
+def save_place_for_user(user_id: int, place_id: str):
     try:
         with open(SAVED_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -372,11 +314,8 @@ def save_place_for_user(user_id: int, place: dict):
         data = {}
 
     user_data = data.setdefault(str(user_id), [])
-    place_id = place.get("place_id", "")
-    existing_ids = [p.get("place_id") for p in user_data if isinstance(p, dict)]
-
-    if place_id and place_id not in existing_ids:
-        user_data.append(place)
+    if place_id not in user_data:
+        user_data.append(place_id)
 
     with open(SAVED_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -402,8 +341,7 @@ def build_place_keyboard(place: dict, section: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="👎", callback_data=f"vote:dislike:{place_id}")
         ])
         buttons.append([
-            InlineKeyboardButton(text="❤️ Зберегти", callback_data=f"save:{place_id}"),
-            InlineKeyboardButton(text="❌ Видалити", callback_data=f"remove:{place['place_id']}")
+            InlineKeyboardButton(text="❤️ Зберегти", callback_data=f"save:{place_id}")
         ])
         buttons.append([
             InlineKeyboardButton(
@@ -419,10 +357,7 @@ def build_route_end_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💛 Підтримати", url=PUMB_URL)],
         [
-            InlineKeyboardButton(
-    text="📤 Поділитися",
-    url=f"https://t.me/share/url?url={BOT_LINK}&text=🔥 Спробуй цей бот для прогулянок по Одесі"
-),
+            InlineKeyboardButton(text="📤 Поділитися ботом", url=BOT_LINK),
             InlineKeyboardButton(text="📸 Instagram", url=INSTAGRAM_URL),
         ],
         [InlineKeyboardButton(text="✍️ Відгук про бот", callback_data="leave_feedback")],
@@ -454,9 +389,6 @@ async def send_place_card(message: Message, place: dict, index: int | None = Non
     else:
         await message.answer(caption, reply_markup=kb)
 
-    if place.get("place_id"):
-        save_shown_place_to_sheets(message.from_user.id, place)
-        remember_last_shown_place(message.from_user.id, place)
 
 @dp.message(F.text == "/start")
 async def start_handler(message: Message):
@@ -469,7 +401,6 @@ async def start_handler(message: Message):
         [KeyboardButton(text="✍️ Відгук про бот")],
         [KeyboardButton(text="📤 Поділитися ботом")],
         [KeyboardButton(text="ℹ️ Як працює бот?")],
-        [KeyboardButton(text="📍 Мої місця")],
     ])
     await message.answer("Привіт! Я — бот <b>«Одеса Навмання»</b> 🧭\nОбирай режим 👇", reply_markup=kb)
 
@@ -477,7 +408,10 @@ async def start_handler(message: Message):
 @dp.message(F.text == "📤 Поділитися ботом")
 async def share_bot(message: Message):
     await message.answer(
-        f"🔥 Кинь це друзям:\n\n{BOT_LINK}"
+        "Поділись ботом з друзями 👇",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔗 Поділитися", url=BOT_LINK)]
+        ])
     )
 
 
@@ -678,14 +612,9 @@ async def handle_vote(callback: types.CallbackQuery):
 @dp.callback_query(F.data.startswith("save:"))
 async def save_place_handler(callback: types.CallbackQuery):
     place_id = callback.data.split(":")[1]
-    place = get_last_shown_place(callback.from_user.id, place_id)
-
-    if not place:
-        await callback.answer("Спочатку відкрий місце ще раз 🙌", show_alert=True)
-        return
-
-    save_place_for_user(callback.from_user.id, place)
+    save_place_for_user(callback.from_user.id, place_id)
     await callback.answer("Збережено ❤️")
+
 
 @dp.callback_query(F.data.startswith("rate:"))
 async def rate_place(callback: types.CallbackQuery):
@@ -793,64 +722,7 @@ async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     await asyncio.sleep(1)
     await dp.start_polling(bot)
-# =========================
-# 🔥 МОЇ МІСЦЯ (АПГРЕЙД)
-# =========================
 
-@dp.message(F.text == "📍 Мої місця")
-async def my_places(message: Message):
-    saved_places = load_saved_places(message.from_user.id)
-
-    if not saved_places:
-        return await message.answer("У вас ще немає збережених місць 😌")
-
-    await message.answer("🔖 Ваші збережені місця:")
-
-    for place in saved_places[:10]:
-        await send_place_card(message, place, section="saved")
-
-    await message.answer(
-        "Хочеш побудувати маршрут з них?",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🚶‍♂️ Побудувати маршрут", callback_data="route_saved")]
-        ])
-    )
-
-
-@dp.callback_query(F.data == "route_saved")
-async def route_saved(callback: types.CallbackQuery):
-    saved_places = load_saved_places(callback.from_user.id)
-
-    if not saved_places:
-        return await callback.answer("Немає місць", show_alert=True)
-
-    for i, place in enumerate(saved_places[:3], 1):
-        await send_place_card(callback.message, place, i, section="saved")
-
-    await callback.answer()
-
-
-def remove_place(user_id, place_id):
-    try:
-        with open(SAVED_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        return
-
-    user_data = data.get(str(user_id), [])
-    user_data = [p for p in user_data if not (isinstance(p, dict) and p.get("place_id") == place_id)]
-    user_data = [p for p in user_data if p != place_id]
-    data[str(user_id)] = user_data
-
-    with open(SAVED_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-
-@dp.callback_query(F.data.startswith("remove:"))
-async def remove_handler(callback: types.CallbackQuery):
-    place_id = callback.data.split(":")[1]
-    remove_place(callback.from_user.id, place_id)
-    await callback.answer("Видалено ❌")
 
 if __name__ == "__main__":
     asyncio.run(main())
