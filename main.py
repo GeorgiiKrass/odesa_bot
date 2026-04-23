@@ -751,19 +751,18 @@ async def my_places(message: Message):
 
     all_places = get_random_places(1000)
 
-    found = False
+    found_places = []
 
     for pid in saved_ids:
         for place in all_places:
             if place.get("place_id") == pid:
-                await send_place_card(message, place, section="saved")
-                found = True
+                found_places.append(place)
                 break
 
-    if not found:
-        await message.answer("Не вдалося знайти місця 😞")
+    if not found_places:
+        return await message.answer("Не вдалося знайти місця 😞")
 
-    for place in saved_places[:10]:
+    for place in found_places[:10]:
         await send_place_card(message, place, section="saved")
 
     await message.answer(
