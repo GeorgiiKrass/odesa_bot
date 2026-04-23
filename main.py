@@ -352,6 +352,7 @@ def build_place_keyboard(place: dict, section: str) -> InlineKeyboardMarkup:
         ])
         buttons.append([
             InlineKeyboardButton(text="❤️ Зберегти", callback_data=f"save:{place_id}")
+            InlineKeyboardButton(text="❌ Видалити", callback_data=f"remove:{place['place_id']}")
         ])
         buttons.append([
             InlineKeyboardButton(
@@ -404,7 +405,6 @@ async def send_place_card(message: Message, place: dict, index: int | None = Non
 
     if place.get("place_id"):
         save_shown_place_to_sheets(message.from_user.id, place)
-InlineKeyboardButton(text="❌ Видалити", callback_data=f"remove:{place['place_id']}")
 
 @dp.message(F.text == "/start")
 async def start_handler(message: Message):
