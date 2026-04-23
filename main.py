@@ -749,10 +749,9 @@ async def my_places(message: Message):
 
     await message.answer("🔖 Ваші збережені місця:")
 
-    # беремо багато місць, щоб знайти всі збережені
-    all_places = get_random_places(200)
-
-    saved_places = [p for p in all_places if p.get("place_id") in saved_ids]
+    all_places = get_random_places(1000)
+    places_map = {p["place_id"]: p for p in all_places if p.get("place_id")}
+    saved_places = [places_map[pid] for pid in saved_ids if pid in places_map]
 
     if not saved_places:
         return await message.answer("Не вдалося знайти місця 😞")
@@ -772,8 +771,9 @@ async def my_places(message: Message):
 async def route_saved(callback: types.CallbackQuery):
     saved_ids = load_saved(callback.from_user.id)
 
-    all_places = get_random_places(200)
-    saved_places = [p for p in all_places if p.get("place_id") in saved_ids]
+    all_places = get_random_places(1000)
+    places_map = {p["place_id"]: p for p in all_places if p.get("place_id")}
+    saved_places = [places_map[pid] for pid in saved_ids if pid in places_map]
 
     if not saved_places:
         return await callback.answer("Немає місць")
