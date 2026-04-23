@@ -421,18 +421,22 @@ async def start_handler(message: Message):
     await message.answer("Привіт! Я — бот <b>«Одеса Навмання»</b> 🧭\nОбирай режим 👇", reply_markup=kb)
 
 
+from urllib.parse import urlencode
+
 @dp.message(F.text == "📤 Поділитися ботом")
 async def share_bot(message: Message):
-    share_url = f"https://t.me/share/url?url={BOT_LINK}&text=🔥 Спробуй цей бот для прогулянок по Одесі"
+    params = {
+        "url": BOT_LINK,
+        "text": "🔥 Спробуй цей бот для прогулянок по Одесі"
+    }
+
+    share_url = f"https://t.me/share/url?{urlencode(params)}"
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📤 Поділитися", url=share_url)]
     ])
 
-    await message.answer(
-        "Поділись ботом з друзями 👇",
-        reply_markup=kb
-    )
+    await message.answer("Поділись ботом з друзями 👇", reply_markup=kb)
 
 
 @dp.message(F.text == "🚶‍♂️ Вирушити на прогулянку")
