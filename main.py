@@ -367,7 +367,10 @@ def build_route_end_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💛 Підтримати", url=PUMB_URL)],
         [
-            InlineKeyboardButton(text="📤 Поділитися ботом", url=BOT_LINK),
+            InlineKeyboardButton(
+    text="📤 Поділитися",
+    url=f"https://t.me/share/url?url={BOT_LINK}&text=🔥 Спробуй цей бот для прогулянок по Одесі"
+),
             InlineKeyboardButton(text="📸 Instagram", url=INSTAGRAM_URL),
         ],
         [InlineKeyboardButton(text="✍️ Відгук про бот", callback_data="leave_feedback")],
