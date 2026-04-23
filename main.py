@@ -424,10 +424,7 @@ async def start_handler(message: Message):
 @dp.message(F.text == "📤 Поділитися ботом")
 async def share_bot(message: Message):
     await message.answer(
-        "Поділись ботом з друзями 👇",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔗 Поділитися", url=BOT_LINK)]
-        ])
+        f"🔥 Кинь це друзям:\n\n{BOT_LINK}"
     )
 
 
