@@ -624,10 +624,15 @@ async def handle_vote(callback: types.CallbackQuery):
 
 
 @dp.callback_query(F.data.startswith("save:"))
-async def save_place_handler(callback: types.CallbackQuery):
-    place_id = callback.data.split(":")[1]
-    save_place_for_user(callback.from_user.id, place_id)
-    await callback.answer("Збережено ❤️")
+users = load_users()
+
+user = users.setdefault(str(callback.from_user.id), {})
+saved = user.setdefault("saved", [])
+
+if place_id not in saved:
+    saved.append(place_id)
+
+save_users(users)
 
 
 @dp.callback_query(F.data.startswith("rate:"))
@@ -741,36 +746,9 @@ async def main():
 # =========================
 
 @dp.message(F.text == "📍 Мої місця")
-async def my_places(message: Message):
-    saved_ids = load_saved(message.from_user.id)
-
-    if not saved_ids:
-        return await message.answer("У вас ще немає збережених місць 😌")
-
-    await message.answer("🔖 Ваші збережені місця:")
-
-    all_places = get_random_places(1000)
-
-    found_places = []
-
-    for pid in saved_ids:
-        for place in all_places:
-            if place.get("place_id") == pid:
-                found_places.append(place)
-                break
-
-    if not found_places:
-        return await message.answer("Не вдалося знайти місця 😞")
-
-    for place in found_places[:10]:
-        await send_place_card(message, place, section="saved")
-
-    await message.answer(
-        "Хочеш побудувати маршрут з них?",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🚶‍♂️ Побудувати маршрут", callback_data="route_saved")]
-        ])
-    )
+users = load_users()
+user = users.get(str(message.from_user.id), {})
+saved_ids = user.get("saved", [])
 
 
 @dp.callback_query(F.data == "route_saved")
